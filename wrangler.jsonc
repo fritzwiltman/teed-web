@@ -3,6 +3,7 @@
   "compatibility_date": "2026-11-18",
   "workers_dev": true,
   "preview_urls": true,
+  "previews": {},
   "assets": {
     "directory": "./dist/teed/browser",
     "not_found_handling": "single-page-application"
