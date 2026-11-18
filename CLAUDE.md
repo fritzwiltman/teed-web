@@ -3,7 +3,7 @@
 Live scoring and trip hub for golf trips. Players log in with a personal code, score hole by hole,
 and follow live leaderboards; an admin sets up trips, rounds, formats, pairings and trip info.
 
-- Build plan (source of truth for decisions): https://claude.ai/artifact/EjFNgELk12pGAnNS5CpSZu
+- Build plan: `docs/plan.md` (copy of https://claude.ai/artifact/EjFNgELk12pGAnNS5CpSZu, the master)
 - Wireframes (approved design): https://claude.ai/artifact/CAMT8mmSpgajXZkR5YPbBL
 - First real trip: Vero Beach, the week before MLK weekend 2027 (about Jan 11–15). M1–M6 done by Jan 1.
 
