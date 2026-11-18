@@ -1,0 +1,60 @@
+{
+  "_about": "What the old site (github.com/fritzwiltman/2026-southern-pines, `node scripts/scores.js`) computes from the seeded gross scores. The scoring engine's Southern Pines rerun must reproduce this. Rules: 90% allowance (GHIN playing handicaps), strokes off the low man (Von), individual formats capped at net double bogey, a press only once the pressing team is closed out, pots pay 75% / 25%, money is net of the $30 buy-in.",
+  "players": ["Fritz", "Von", "Matt", "Charlie"],
+  "rounds": [
+    {
+      "round": 1,
+      "course": "Tot Hill Farm",
+      "format": "sixes",
+      "strokes_received": { "Fritz": 11, "Von": 0, "Matt": 22, "Charlie": 12 },
+      "gross": { "Fritz": 94, "Von": 85, "Matt": 116, "Charlie": 99 },
+      "matches": [
+        { "bet": "m1", "holes": [1, 6], "a": ["Fritz", "Von"], "b": ["Matt", "Charlie"], "winner": "a", "result": "3 & 1" },
+        { "bet": "m2", "holes": [7, 12], "a": ["Fritz", "Charlie"], "b": ["Von", "Matt"], "winner": null, "result": "Push" },
+        { "bet": "m3", "holes": [13, 18], "a": ["Fritz", "Matt"], "b": ["Von", "Charlie"], "winner": "b", "result": "1 up" }
+      ],
+      "presses": [
+        { "of": "m1", "holes": [6, 6], "pressed_by": ["Matt", "Charlie"], "winner": ["Matt", "Charlie"], "result": "1 up" }
+      ],
+      "money": { "Fritz": -10, "Von": 10, "Matt": -10, "Charlie": 10 }
+    },
+    {
+      "round": 2,
+      "course": "Southern Pines",
+      "format": "nassau",
+      "strokes_received": { "Fritz": 11, "Von": 0, "Matt": 22, "Charlie": 12 },
+      "gross": { "Fritz": 99, "Von": 90, "Matt": 107, "Charlie": 102 },
+      "teams": { "a": ["Von", "Matt"], "b": ["Charlie", "Fritz"] },
+      "bets": [
+        { "bet": "front", "holes": [1, 9], "winner": null, "result": "Push" },
+        { "bet": "back", "holes": [10, 18], "winner": "b", "result": "2 up" },
+        { "bet": "overall", "holes": [1, 18], "winner": "b", "result": "2 up" }
+      ],
+      "presses": [],
+      "money": { "Fritz": 20, "Von": -20, "Matt": -20, "Charlie": 20 }
+    },
+    {
+      "round": 3,
+      "course": "Mid Pines",
+      "format": "stableford",
+      "strokes_received": { "Fritz": 12, "Von": 0, "Matt": 23, "Charlie": 12 },
+      "gross": { "Fritz": 99, "Von": 93, "Matt": 109, "Charlie": 108 },
+      "points": { "Fritz": 23, "Matt": 22, "Von": 17, "Charlie": 14 },
+      "money": { "Fritz": 60, "Von": -30, "Matt": 0, "Charlie": -30 }
+    },
+    {
+      "round": 4,
+      "course": "Pine Needles",
+      "format": "stroke",
+      "strokes_received": { "Fritz": 11, "Von": 0, "Matt": 22, "Charlie": 12 },
+      "gross": { "Fritz": 98, "Von": 82, "Matt": 112, "Charlie": 105 },
+      "net": { "Von": 82, "Fritz": 87, "Matt": 88, "Charlie": 91 },
+      "money": { "Fritz": 0, "Von": 60, "Matt": -30, "Charlie": -30 }
+    }
+  ],
+  "trip_money": { "Fritz": 70, "Von": 20, "Matt": -60, "Charlie": -30 },
+  "settle_up": {
+    "banker": "Fritz",
+    "lines": ["Matt pays Fritz $60", "Charlie pays Fritz $30", "Fritz pays Von $20"]
+  }
+}

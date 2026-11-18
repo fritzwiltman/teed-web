@@ -26,6 +26,7 @@ src/                      Angular app
 supabase/migrations/      SQL schema, RLS policies, functions (one file per change)
 supabase/functions/       edge functions: redeem-code, notify, itinerary-propose, course-import
 supabase/seed/            Southern Pines 2026 test trip, course library seed list
+supabase/tests/           pgTAP tests for RLS and the seed (CI runs them on every PR)
 docs/                     notes; wireframes live at the link above
 ```
 
@@ -58,6 +59,7 @@ npm install
 npm start                 # ng serve
 npm test
 npm run build             # outputs dist/teed/browser
-npx supabase db push      # apply migrations
+npx supabase db push      # apply migrations (add --include-seed for the test trip)
+npm run test:db           # RLS + seed tests in a throwaway local Postgres (no Docker needed)
 npx wrangler deploy       # manual deploy (normally via Cloudflare on merge)
 ```

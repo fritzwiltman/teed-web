@@ -1,0 +1,27 @@
+name: Database tests
+on:
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/db-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/db-tests.yml'
+permissions:
+  contents: read
+jobs:
+  rls:
+    name: Migrations, seed and RLS tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # Local Supabase Postgres: applies supabase/migrations, then supabase/seed/*.sql.
+      - name: Start database
+        run: supabase db start
+      - name: Run pgTAP tests
+        run: supabase test db
