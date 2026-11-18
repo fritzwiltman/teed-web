@@ -24,10 +24,10 @@ select results_eq(
   'select 4::bigint', 'every player has a generated login code');
 
 select results_eq(
-  $$ select c.short_name, t.name, t.yards, t.rating, t.slope, (select sum(x) from unnest(t.par) x)
+  $$ select c.short_name, t.name, t.yards, t.rating, t.slope::int, (select sum(x) from unnest(t.par) x)
      from public.tees t join public.courses c on c.id = t.course_id
      where c.short_name in ('Tot Hill', 'S. Pines', 'Mid Pines', 'Pine Needles', 'Talamore') order by t.yards $$,
-  $$ values ('S. Pines',     'White',  6106, 70.3::numeric(3,1), 135::smallint, 71::bigint),
+  $$ values ('S. Pines',     'White',  6106, 70.3::numeric(3,1), 135, 71::bigint),
             ('Tot Hill',     'Silver', 6180, 70.6, 135, 72),
             ('Talamore',     'Blue',   6268, 70.9, 134, 71),
             ('Pine Needles', 'Ross',   6400, 71.9, 138, 71),
@@ -35,22 +35,22 @@ select results_eq(
   'five courses (four played, Talamore the backup) with tees, yards, rating, slope and par');
 
 select results_eq(
-  $$ select r.round_number, c.short_name, r.play_date, r.tee_time, f.format_key, r.status
+  $$ select r.round_number::int, c.short_name, r.play_date, r.tee_time, f.format_key, r.status
      from public.rounds r join public.trips t on t.id = r.trip_id join public.courses c on c.id = r.course_id
      join public.round_formats f on f.round_id = r.id
      where t.slug = 'PINES' order by r.round_number $$,
-  $$ values (1::smallint, 'Tot Hill',     date '2026-10-09', time '10:50', 'sixes',      'final'),
+  $$ values (1,           'Tot Hill',     date '2026-10-09', time '10:50', 'sixes',      'final'),
             (2,           'S. Pines',     '2026-10-10',      '07:33',      'nassau',     'final'),
             (3,           'Mid Pines',    '2026-10-11',      '08:05',      'stableford', 'final'),
             (4,           'Pine Needles', '2026-10-12',      '08:00',      'stroke',     'final') $$,
   'four rounds with course, date, tee time and format');
 
 select results_eq(
-  $$ select r.round_number, p.name, gp.course_handicap, gp.playing_handicap, gp.team
+  $$ select r.round_number::int, p.name, gp.course_handicap::int, gp.playing_handicap::int, gp.team
      from public.group_players gp join public.rounds r on r.id = gp.round_id join public.trips t on t.id = r.trip_id
      join public.players p on p.id = gp.player_id
      where t.slug = 'PINES' order by r.round_number, gp.position $$,
-  $$ values (1::smallint, 'Fritz', 22::smallint, 19::smallint, null), (1, 'Von',  9,  8, null), (1, 'Matt', 34, 30, null), (1, 'Charlie', 22, 20, null),
+  $$ values (1,           'Fritz', 22,           19,           null), (1, 'Von',  9,  8, null), (1, 'Matt', 34, 30, null), (1, 'Charlie', 22, 20, null),
             (2,           'Fritz', 22,           19,           'B'),  (2, 'Von',  9,  8, 'A'),  (2, 'Matt', 34, 30, 'A'),  (2, 'Charlie', 22, 20, 'B'),
             (3,           'Fritz', 23,           21,           null), (3, 'Von', 10,  9, null), (3, 'Matt', 35, 32, null), (3, 'Charlie', 24, 21, null),
             (4,           'Fritz', 24,           21,           null), (4, 'Von', 11, 10, null), (4, 'Matt', 36, 32, null), (4, 'Charlie', 24, 22, null) $$,
@@ -66,12 +66,12 @@ select results_eq(
   'select 288::bigint', '288 gross scores (4 players x 4 rounds x 18 holes)');
 
 select results_eq(
-  $$ select r.round_number, p.name,
+  $$ select r.round_number::int, p.name,
             sum(s.strokes) filter (where s.hole <= 9), sum(s.strokes) filter (where s.hole > 9), sum(s.strokes)
      from public.scores s join public.rounds r on r.id = s.round_id join public.trips t on t.id = r.trip_id
      join public.players p on p.id = s.player_id
      where t.slug = 'PINES' group by r.round_number, p.name, p.sort_order order by r.round_number, p.sort_order $$,
-  $$ values (1::smallint, 'Fritz', 43::bigint, 51::bigint, 94::bigint), (1, 'Von', 45, 40, 85), (1, 'Matt', 62, 54, 116), (1, 'Charlie', 52, 47,  99),
+  $$ values (1,           'Fritz', 43::bigint, 51::bigint, 94::bigint), (1, 'Von', 45, 40, 85), (1, 'Matt', 62, 54, 116), (1, 'Charlie', 52, 47,  99),
             (2,           'Fritz', 51,         48,         99),         (2, 'Von', 44, 46, 90), (2, 'Matt', 54, 53, 107), (2, 'Charlie', 52, 50, 102),
             (3,           'Fritz', 53,         46,         99),         (3, 'Von', 46, 47, 93), (3, 'Matt', 56, 53, 109), (3, 'Charlie', 55, 53, 108),
             (4,           'Fritz', 46,         52,         98),         (4, 'Von', 39, 43, 82), (4, 'Matt', 55, 57, 112), (4, 'Charlie', 54, 51, 105) $$,

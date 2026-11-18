@@ -256,7 +256,9 @@ create table public.scores (
   hole                 smallint not null check (hole between 1 and 18),
   strokes              smallint not null check (strokes between 1 and 20),
   entered_by           uuid references auth.users (id) on delete set null,
-  entered_by_player_id uuid references public.players (id) on delete set null,   -- "Entered on Jack's phone"
+  -- "Entered on Jack's phone". Deliberately not a foreign key: a set-null cascade here would
+  -- update score rows in the middle of a trip or player delete. Join to players when reading.
+  entered_by_player_id uuid,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
   primary key (round_id, player_id, hole),
