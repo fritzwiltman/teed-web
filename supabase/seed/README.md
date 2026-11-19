@@ -12,15 +12,41 @@
 npx supabase db push --include-seed     # migrations, then the seed
 ```
 
-The trip is seeded as `final` (it's over): players can read it but scoring is closed. To test scoring on it,
-set it live in the SQL editor: `update trips set status = 'live' where slug = 'PINES';` and the rounds you want
-to `'live'` or `'scheduled'`.
+The trip is seeded as `final` (it's over): codes don't log in and scoring is closed.
 
-Login codes are generated at random when the seed runs and are never committed (the repo is public). Read them
-in the SQL editor:
+Login codes are generated at random when the seed runs and are never committed (the repo is public).
+
+## Testing with the PINES trip
+
+Codes only work on a live trip. In the Supabase SQL editor:
 
 ```sql
-select p.name, c.code from player_codes c join players p on p.id = c.player_id;
+-- 1. Open the trip for testing
+update trips set status = 'live' where slug = 'PINES';
+
+-- 2. Read the codes
+select p.name, c.code
+from player_codes c join players p on p.id = c.player_id join trips t on t.id = p.trip_id
+where t.slug = 'PINES' order by p.sort_order;
+
+-- 3. When you're done: close it again. Phones stay logged in (read-only); the delete signs them all out too.
+update trips set status = 'final' where slug = 'PINES';
+delete from trip_sessions where trip_id = (select id from trips where slug = 'PINES');
+```
+
+Other things worth trying:
+
+```sql
+-- A spectator code
+insert into spectator_codes (trip_id, code) select id, 'PINES-WATCH-7Q3D' from trips where slug = 'PINES';
+
+-- Regenerate one player's code (the old one stops working and their phones are signed out)
+update player_codes set code = 'PINES-V26-' || private.random_code_suffix()
+where player_id = (select p.id from players p join trips t on t.id = p.trip_id where t.slug = 'PINES' and p.name = 'Von')
+returning code;
+
+-- Locked out after too many wrong codes? Clear the lockouts.
+delete from private.redeem_lockouts;
 ```
 
 ## Making yourself the app admin

@@ -15,12 +15,13 @@ select results_eq(
   'four players with their GHIN indexes');
 
 select results_eq(
-  $$ select b.name from public.trips t join public.players b on b.id = t.banker_player_id where t.slug = 'PINES' $$,
-  $$ values ('Fritz') $$, 'Fritz is the banker');
+  $$ select b.name, o.name, o.role from public.trips t
+     join public.players b on b.id = t.banker_player_id join public.players o on o.id = t.owner_player_id where t.slug = 'PINES' $$,
+  $$ values ('Fritz', 'Fritz', 'player') $$, 'Fritz is the banker and the owner, with ordinary player rights');
 
 select results_eq(
   $$ select count(*) from public.player_codes c join public.players p on p.id = c.player_id join public.trips t on t.id = p.trip_id
-     where t.slug = 'PINES' and c.code ~ ('^PINES-' || p.initials || '26-[A-Z2-9]{2}$') $$,
+     where t.slug = 'PINES' and c.code ~ ('^PINES-' || p.initials || '26-[A-HJ-NP-Z2-9]{4}$') $$,
   'select 4::bigint', 'every player has a generated login code');
 
 select results_eq(

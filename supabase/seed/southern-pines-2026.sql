@@ -70,21 +70,20 @@ begin
   -- Indexes from GHIN as pulled for the trip. Initials other than Fritz's are placeholders.
   insert into public.players (trip_id, name, initials, role, handicap_index, index_entered_at, index_locked_at, sort_order)
   values
-    (v_trip, 'Fritz',   'FW', 'co_admin', 18.6, '2026-10-01', '2026-10-01', 1),
+    (v_trip, 'Fritz',   'FW', 'player',   18.6, '2026-10-01', '2026-10-01', 1),
     (v_trip, 'Von',     'V',  'player',    8.1, '2026-10-01', '2026-10-01', 2),
     (v_trip, 'Matt',    'M',  'player',   28.7, '2026-10-01', '2026-10-01', 3),
     (v_trip, 'Charlie', 'C',  'player',   19.1, '2026-10-01', '2026-10-01', 4);
 
-  update public.trips
-     set banker_player_id = (select id from public.players where trip_id = v_trip and name = 'Fritz')
-   where id = v_trip;
+  -- Fritz is the banker, and the owner (display only: owner rights come from the email sign-in).
+  update public.trips t
+     set banker_player_id = p.id, owner_player_id = p.id
+    from public.players p
+   where t.id = v_trip and p.trip_id = v_trip and p.name = 'Fritz';
 
-  -- Random login codes: PINES-<initials>26-<2 characters>.
+  -- Random login codes: PINES-<initials>26-<4 characters>.
   insert into public.player_codes (player_id, code)
-  select p.id,
-         'PINES-' || p.initials || '26-'
-           || substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 1 + floor(random() * 32)::int, 1)
-           || substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 1 + floor(random() * 32)::int, 1)
+  select p.id, 'PINES-' || p.initials || '26-' || private.random_code_suffix()
   from public.players p
   where p.trip_id = v_trip;
 

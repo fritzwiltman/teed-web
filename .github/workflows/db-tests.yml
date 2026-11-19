@@ -19,9 +19,34 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 3.2.0   # pinned: resolving 'latest' hits GitHub's API rate limit
       # Local Supabase Postgres: applies supabase/migrations, then supabase/seed/*.sql.
       - name: Start database
         run: supabase db start
       - name: Run pgTAP tests
         run: supabase test db
+
+  functions:
+    name: Edge function tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 3.2.0   # pinned: resolving 'latest' hits GitHub's API rate limit
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Local stack: database, Auth, Data API and the edge runtime serving supabase/functions.
+      # Only what the tests use; one retry because image pulls are sometimes rate limited.
+      - name: Start Supabase
+        run: |
+          start() { supabase start -x studio,realtime,storage-api,imgproxy,mailpit,postgres-meta,logflare,vector,supavisor; }
+          start || { supabase stop --no-backup || true; sleep 20; start; }
+      - name: Export local URL and keys
+        run: |
+          supabase status -o env > "$RUNNER_TEMP/supabase.env"
+          cut -d= -f1 "$RUNNER_TEMP/supabase.env"
+          sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' "$RUNNER_TEMP/supabase.env" >> "$GITHUB_ENV"
+      - name: Run edge function tests
+        run: node --test supabase/tests/functions/redeem-code.test.mjs
