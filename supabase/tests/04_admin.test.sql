@@ -41,7 +41,9 @@ select matches(public.regenerate_player_code(tests.id('fritz')), '^VERO-FW27-[A-
 select lives_ok(
   $$ select public.regenerate_player_code(p.id) from public.players p where p.trip_id = tests.id('vero') and p.name <> 'Fritz' $$,
   'and for the rest');
-select results_eq('select count(*) from public.player_codes', 'select 4::bigint', 'every player has a code the organizer can read');
+select results_eq(
+  $$ select count(*) from public.player_codes c join public.players p on p.id = c.player_id where p.trip_id = tests.id('vero') $$,
+  'select 4::bigint', 'every player has a code the organizer can read');
 
 select lives_ok(
   $$ insert into public.player_contacts (player_id, phone) values (tests.id('ben'), '+17725550101') $$,
