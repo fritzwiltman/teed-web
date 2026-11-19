@@ -105,6 +105,19 @@ describe('mapOpenGolf', () => {
     expect(mapOpenGolf(COURSE, TEES, holes()).draft.tees[3].hole_yards).toBeNull();
   });
 
+  it('ignores the empty filler holes some records have after the 18th', () => {
+    const filler = Array.from({ length: 13 }, (_, i) => ({
+      number: 19 + i,
+      par: 4,
+      handicap_index: null,
+      yardages: {},
+    }));
+    const { draft, gaps } = mapOpenGolf(COURSE, TEES, [...holes(), ...filler]);
+    expect(draft.tees[0].par).toEqual(PAR);
+    expect(draft.tees[0].stroke_index).toEqual(SI);
+    expect(gaps).toEqual({ par: false, strokeIndex: false });
+  });
+
   it('flags a missing stroke index instead of inventing one', () => {
     const { draft, gaps } = mapOpenGolf(COURSE, TEES, holes(SI.map(() => null)));
     expect(gaps.strokeIndex).toBe(true);

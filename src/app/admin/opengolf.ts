@@ -95,7 +95,11 @@ export function mapOpenGolf(
   tees: OpenGolfTee[],
   holes: OpenGolfHole[],
 ): { draft: CourseDraft; gaps: ImportGaps } {
-  const ordered = [...holes].sort((a, b) => a.number - b.number);
+  // Some records are padded with empty filler holes after the real ones (19, 20, …: no stroke
+  // index, no yardage). They carry no data, so they are dropped.
+  const ordered = holes
+    .filter((h) => h.handicap_index != null || Object.values(h.yardages ?? {}).some((y) => y))
+    .sort((a, b) => a.number - b.number);
   const count = ordered.length || course.scorecard?.length || 18;
 
   const parFromHoles = ordered.map((h) => h.par);

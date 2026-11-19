@@ -100,7 +100,11 @@ const isPermutation = (a) => [...a].sort((x, y) => x - y).every((v, i) => v === 
 async function load(id) {
   const [course, teesBody, holesBody] = [await get(`/courses/${id}`), await get(`/courses/${id}/tees`), await get(`/courses/${id}/holes`)];
   const tees = teesBody?.tees ?? [];
-  const holes = [...(holesBody?.holes ?? [])].sort((a, b) => a.number - b.number);
+  // Some records are padded with empty filler holes after the real ones (19, 20, …: no stroke
+  // index, no yardage). They carry no data, so they are dropped.
+  const holes = [...(holesBody?.holes ?? [])]
+    .filter((h) => h.handicap_index != null || Object.values(h.yardages ?? {}).some((y) => y))
+    .sort((a, b) => a.number - b.number);
   const par = holes.map((h) => h.par);
   const si = holes.map((h) => h.handicap_index);
   const missing = [];
