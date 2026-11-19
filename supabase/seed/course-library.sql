@@ -44,6 +44,69 @@ from (values
 join public.courses c on c.source = 'opengolfapi' and c.source_ref = 'dfd21ea9-4cdb-47c5-9b78-4a15f8dd2480'
 on conflict do nothing;
 
+-- Streamsong Resort Blue Course (Bowling Green, FL)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Streamsong Resort Blue Course', 'Bowling Green, FL', null, null, null, 'http://www.streamsongresort.com', 'opengolfapi', 'fe4adccc-d0ff-4c44-8b63-367a959e47d4', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('Green', 7276, 74, 134, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Green/Black', 6934, 72.9, 132, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Black', 6692, 71.8, 130, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Black/Silver', 6381, 70.7, 129, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Silver', 6192, 69.5, 127, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Silver (W)', 6192, 75.3, 130, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Silver/Gold', 5796, 67.5, 120, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Silver/Gold (W)', 5796, 73, 125, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Gold', 5512, 66.4, 113, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[]),
+  ('Gold (W)', 5512, 71.6, 122, '{4,5,4,4,3,4,3,4,5,3,4,4,4,5,4,3,5,4}'::smallint[], '{14,10,8,4,16,18,12,2,6,15,1,11,17,9,7,13,5,3}'::smallint[], null::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = 'fe4adccc-d0ff-4c44-8b63-367a959e47d4'
+on conflict do nothing;
+
+-- Streamsong Resort Red Course (Bowling Green, FL)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Streamsong Resort Red Course', 'Bowling Green, FL', null, null, null, 'https://www.streamsongresort.com/calendar-of-events/', 'opengolfapi', 'bf3cfb6e-ec06-4d5c-856f-35df9c045c4e', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('Green', 7110, 74.1, 137, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Green/Black', 6831, 73, 136, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Black', 6537, 71.6, 132, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Black/Silver', 6250, 70.6, 128, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Silver', 6008, 69.5, 124, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Silver (W) (W)', 6008, 74.9, 132, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Silver/Gold', 5309, 65.9, 114, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Silver/Gold (W) (W)', 5309, 71, 124, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Gold', 4861, 64.7, 113, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[]),
+  ('Gold (W) (W)', 4861, 69.9, 121, '{4,5,4,4,4,3,5,3,4,4,4,4,5,3,4,3,4,5}'::smallint[], '{4,2,14,16,6,18,12,10,8,9,5,3,15,11,1,7,13,17}'::smallint[], null::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = 'bf3cfb6e-ec06-4d5c-856f-35df9c045c4e'
+on conflict do nothing;
+
+-- Streamsong Resort Black Course (Bowling Green, FL)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Streamsong Resort Black Course', 'Bowling Green, FL', null, null, null, 'https://www.streamsongresort.com/', 'opengolfapi', '9953ab5b-3b5f-4410-b0b4-711eeb265961', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('Green', 7320, 74.7, 135, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Green/Black', 6981, 73.2, 132, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Black', 6747, 72, 130, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Black/Silver', 6462, 70.8, 127, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Silver', 6226, 69.5, 125, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Silver (W)', 6226, 74.8, 130, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Silver/Gold', 5681, 67.1, 120, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Silver/Gold (W)', 5681, 72, 124, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Gold', 5280, 65.1, 116, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[]),
+  ('Gold (W)', 5280, 69.5, 119, '{5,4,4,5,3,4,3,4,4,5,4,5,4,4,3,4,3,5,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}'::smallint[], null::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = '9953ab5b-3b5f-4410-b0b4-711eeb265961'
+on conflict do nothing;
+
 -- Dunes At Sandridge Golf Club (Vero Beach, FL)
 insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
 values ('Dunes At Sandridge Golf Club', 'Vero Beach, FL', null, 1987, null, 'http://www.sandridgegc.com/', 'opengolfapi', 'd2b60db9-a9e8-4561-9092-72952c900ae4', now())
@@ -78,6 +141,91 @@ from (values
   ('Red (W)', 4403, 66.7, 110, '{5,4,4,5,3,4,4,3,4,5,3,4,4,4,4,3,4,5}'::smallint[], '{3,13,9,1,17,7,5,15,11,6,16,10,8,2,14,18,12,4}'::smallint[], '{433,273,270,377,110,246,271,99,243,380,111,301,181,269,197,61,180,395}'::smallint[])
 ) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
 join public.courses c on c.source = 'opengolfapi' and c.source_ref = '2d1e13ee-e5a6-44ad-a13d-0aea5bf3f783'
+on conflict do nothing;
+
+-- Wanamaker Course At Pga Golf Club (Port St. Lucie, FL)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Wanamaker Course At Pga Golf Club', 'Port St. Lucie, FL', null, null, null, 'http://www.pgavillage.com/', 'opengolfapi', 'ed212a93-3a96-4300-8b51-2662cb7c8007', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('Medal', 7079, 75.2, 145, '{5,4,4,3,4,3,5,4,4,4,3,4,5,4,4,5,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament', 6553, 72.4, 141, '{5,4,4,3,4,3,5,4,4,4,3,4,5,4,4,5,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard', 6095, 70.3, 131, '{5,4,4,3,4,3,5,4,4,4,3,4,5,4,4,5,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard/Middle', 5814, 68.9, 128, '{5,4,4,3,4,3,5,4,4,4,3,4,5,4,4,5,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle (W) (W)', 5573, 74.1, 137, '{5,4,4,3,4,3,5,4,4,4,3,4,5,4,4,5,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle', 5573, 67.9, 126, '{5,4,4,3,4,3,5,4,4,4,3,4,5,4,4,5,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward', 4902, 64.7, 119, '{5,4,4,3,4,3,5,4,4,4,3,4,5,4,4,5,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward (W) (W)', 4902, 70.2, 130, '{5,4,4,3,4,3,5,4,4,4,3,4,5,4,4,5,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = 'ed212a93-3a96-4300-8b51-2662cb7c8007'
+on conflict do nothing;
+
+-- Ryder Course At Pga Golf Club (Port St. Lucie, FL)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Ryder Course At Pga Golf Club', 'Port St. Lucie, FL', null, 1996, null, 'http://www.pgavillage.com/', 'opengolfapi', '5c2f7213-64d7-47fd-abc2-4cab73f38317', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('Medal (W)', 6826, 79.9, 142, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Medal', 6826, 73.2, 133, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Medal/Tournament (W)', 6643, 79.1, 140, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Medal/Tournament', 6643, 72.6, 131, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament', 6456, 71.1, 129, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament (W)', 6456, 77.3, 136, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament/Standard (W)', 6257, 76.4, 134, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament/Standard', 6257, 70.1, 128, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard', 6029, 68.7, 126, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard (W)', 6029, 74.9, 131, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard/Middle (W)', 5730, 73.4, 129, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard/Middle', 5730, 67.7, 120, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle', 5538, 66.8, 115, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle (W)', 5538, 72.5, 126, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle/Forward', 5127, 65.3, 113, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle/Forward (W)', 5127, 70.5, 123, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward (W)', 4895, 69.3, 120, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward', 4895, 64.4, 110, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward/Friendly (W)', 4417, 66.5, 113, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward/Friendly', 4417, 62.3, 106, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Friendly', 3614, 59.6, 99, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Friendly (W)', 3614, 61.7, 102, '{4,4,4,5,3,5,3,4,4,3,4,3,5,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = '5c2f7213-64d7-47fd-abc2-4cab73f38317'
+on conflict do nothing;
+
+-- Dye Course At Pga Golf Club (Port St. Lucie, FL)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Dye Course At Pga Golf Club', 'Port St. Lucie, FL', null, 2000, null, 'http://www.pgavillage.com/', 'opengolfapi', 'c3aae2bc-100e-490c-a7ed-7c85887f82e5', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('Medal (W)', 7221, null, 153, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Medal', 7221, 75.7, 142, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Medal/Tournament', 6918, 73.9, 139, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Medal/Tournament (W)', 6918, null, 149, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament (W)', 6682, 79.2, 146, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament', 6682, 72.9, 137, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament/Standard', 6426, 71.6, 136, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Tournament/Standard (W)', 6426, 78, 144, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard (W)', 6252, 77.1, 141, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard', 6252, 70.7, 133, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard/Middle (W)', 6010, 75.8, 139, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Standard/Middle', 6010, 69.5, 130, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle (W)', 5807, 74.6, 136, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle', 5807, 68.5, 125, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle/Forward', 5363, 66.5, 122, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Middle/Forward (W)', 5363, 71.8, 131, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward', 4991, 64.6, 117, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward (W)', 4991, 69.3, 127, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward/Friendly', 4545, 62.9, 111, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Forward/Friendly (W)', 4545, 66.8, 121, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Friendly', 3637, 60.2, 105, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[]),
+  ('Friendly (W)', 3637, 61.8, 111, '{4,4,3,4,5,3,5,4,4,5,4,4,3,4,4,3,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4}'::smallint[], '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[], null::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = 'c3aae2bc-100e-490c-a7ed-7c85887f82e5'
 on conflict do nothing;
 
 -- Pga National Resort Champion Course (Palm Beach Gardens, FL)
@@ -157,6 +305,27 @@ from (values
 join public.courses c on c.source = 'opengolfapi' and c.source_ref = 'e52240da-a538-46b3-ae9a-b46396b20123'
 on conflict do nothing;
 
+-- Pinehurst Resort Country Club No 2 (Pinehurst, NC)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Pinehurst Resort Country Club No 2', 'Pinehurst, NC', null, 1901, null, 'http://www.pinehurst.com', 'opengolfapi', '86620a66-2f67-409e-8aaa-8d503d820631', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('US Open', 7588, 76.5, 138, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], null::smallint[]),
+  ('US Open (W)', 7588, 77.8, 140, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], null::smallint[]),
+  ('Blue', 6961, 73.7, 133, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], '{393,439,350,474,508,203,393,469,174,580,455,419,375,433,183,513,185,415}'::smallint[]),
+  ('Ross', 6627, 71.9, 130, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], '{393,411,350,434,508,178,393,469,148,580,375,360,375,419,170,513,185,366}'::smallint[]),
+  ('White', 6307, 70.7, 126, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], '{376,411,330,434,462,178,385,440,148,455,375,360,358,419,170,478,162,366}'::smallint[]),
+  ('Tufts', 5949, 68.9, 124, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], '{376,411,330,326,432,170,313,440,148,455,375,360,358,347,153,437,152,366}'::smallint[]),
+  ('Green', 5771, 68, 123, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], '{366,390,309,326,432,170,313,419,140,438,358,336,327,347,153,437,152,358}'::smallint[]),
+  ('Green (W)', 5771, 73.3, 129, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], '{366,390,309,326,432,170,313,419,140,438,358,336,327,347,153,437,152,358}'::smallint[]),
+  ('Red (W)', 5302, 70.3, 127, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], '{340,342,283,316,417,116,306,400,124,421,320,293,278,337,124,411,145,329}'::smallint[]),
+  ('Red', 5302, 65.5, 117, '{4,4,4,4,5,3,4,5,3,5,4,4,4,4,3,5,3,4}'::smallint[], '{11,3,9,1,15,5,7,17,13,18,8,10,6,2,12,16,14,4}'::smallint[], '{340,342,283,316,417,116,306,400,124,421,320,293,278,337,124,411,145,329}'::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = '86620a66-2f67-409e-8aaa-8d503d820631'
+on conflict do nothing;
+
 -- Pinehurst Resort Country Club No 3 (Pinehurst, NC)
 insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
 values ('Pinehurst Resort Country Club No 3', 'Pinehurst, NC', null, 1910, null, 'http://www.pinehurst.com', 'opengolfapi', 'b5890600-49ce-40dc-a553-383eac5692bf', now())
@@ -212,6 +381,27 @@ from (values
   ('Red', 5223, 64.9, 112, '{4,5,4,4,3,4,4,4,4,4,4,3,5,3,4,5,4,4}'::smallint[], '{7,3,15,1,17,11,13,5,9,6,16,18,2,10,8,4,12,14}'::smallint[], '{312,414,290,325,127,320,289,288,315,294,285,94,415,106,321,407,305,305}'::smallint[])
 ) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
 join public.courses c on c.source = 'opengolfapi' and c.source_ref = '5b0dfcec-77bf-430e-bbe5-747e0199c565'
+on conflict do nothing;
+
+-- Pinehurst Course No.7 (Pinehurst, NC)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Pinehurst Course No.7', 'Pinehurst, NC', null, 1986, null, null, 'opengolfapi', '540541fb-8e7a-4ef4-96e3-d3d0b4b6a8e9', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('Gold', 7216, 75.5, 143, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], '{520,462,406,418,205,479,394,543,191,399,421,525,207,408,435,197,406,600}'::smallint[]),
+  ('Blue', 6824, 73.5, 138, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], '{493,440,387,405,179,463,365,517,174,370,395,503,189,388,413,177,392,574}'::smallint[]),
+  ('White', 6347, 71.6, 130, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], '{476,411,367,386,145,438,329,495,153,337,380,464,165,364,387,149,373,528}'::smallint[]),
+  ('Fairwoods', 6103, 70.5, 126, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], '{476,391,367,340,145,411,329,495,153,316,380,464,98,364,366,128,352,528}'::smallint[]),
+  ('Green', 5709, 68.7, 121, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], '{460,391,295,340,111,411,291,445,124,316,323,431,98,337,366,128,352,490}'::smallint[]),
+  ('Green (W)', 5709, 74.1, 136, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], '{460,391,295,340,111,411,291,445,124,316,323,431,98,337,366,128,352,490}'::smallint[]),
+  ('Red Fairlady 1', 5183, 71.2, 127, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], null::smallint[]),
+  ('Red Fairlady 2', 5183, 66.9, 115, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], null::smallint[]),
+  ('Yellow', 3833, 60.6, 101, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], '{318,213,184,217,103,228,215,305,113,188,229,305,91,203,233,117,217,354}'::smallint[]),
+  ('Yellow (W)', 3833, 63.1, 108, '{5,4,4,4,3,4,4,5,3,4,4,5,3,4,4,3,4,5}'::smallint[], '{5,1,13,11,17,3,9,7,15,6,10,4,16,8,14,18,2,12}'::smallint[], '{318,213,184,217,103,228,215,305,113,188,229,305,91,203,233,117,217,354}'::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = '540541fb-8e7a-4ef4-96e3-d3d0b4b6a8e9'
 on conflict do nothing;
 
 -- Pinehurst Resort Country Club No 8 (Pinehurst, NC)
@@ -334,6 +524,27 @@ from (values
   ('Red Hawk (W)', 5034, 70.4, 129, '{4,4,5,4,4,3,5,3,5,4,5,3,4,4,3,5,3,4}'::smallint[], '{6,14,12,4,10,16,18,8,2,5,9,11,1,17,13,7,15,3}'::smallint[], null::smallint[])
 ) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
 join public.courses c on c.source = 'opengolfapi' and c.source_ref = 'fa12bffd-5c66-470e-a5b9-46a0951f8eea'
+on conflict do nothing;
+
+-- Whistling Straits (Sheboygan, WI)
+insert into public.courses (name, location, architect, year_opened, description, website_url, source, source_ref, ratings_checked_at)
+values ('Whistling Straits', 'Sheboygan, WI', null, 2000, 'Whistling Straits is one of two 36-hole links-style golf courses associated with Destination Kohler, a luxury golf resort owned and operated by the Kohler Company in Kohler, Wisconsin. The other course is Blackwolf Run, located in the Village of Kohler. The Whistling Straits complex is located north of Sheboygan, in the unincorporated community of Haven in the Town of Mosel in Sheboygan County. Whistling Straits is separated into two courses, the Straits Course and the Irish Course.', 'http://americanclubresort.com/golf/whistling-straits', 'opengolfapi', '2d201c28-68ec-4897-b7b1-8f19c8984d26', now())
+on conflict do nothing;
+insert into public.tees (course_id, name, yards, rating, slope, par, stroke_index, hole_yards)
+select c.id, v.name, v.yards, v.rating, v.slope, v.par, v.stroke_index, v.hole_yards
+from (values
+  ('Black', 7201, 75.6, 146, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{400,372,147,489,570,160,372,555,484,398,208,413,183,564,479,474,375,558}'::smallint[]),
+  ('Blue', 6750, 73.5, 141, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{387,360,138,443,517,149,363,542,409,387,193,396,160,520,459,436,355,536}'::smallint[]),
+  ('Green', 6366, 72, 137, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{369,347,128,432,501,135,344,501,322,378,177,373,152,508,416,425,335,523}'::smallint[]),
+  ('Green (W)', 6366, 77.4, 142, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{369,347,128,432,501,135,344,501,322,378,177,373,152,508,416,425,335,523}'::smallint[]),
+  ('White', 5992, 70.3, 133, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{359,340,118,405,477,123,339,459,308,361,169,349,145,469,370,383,325,493}'::smallint[]),
+  ('White (W)', 5992, 75.2, 137, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{359,340,118,405,477,123,339,459,308,361,169,349,145,469,370,383,325,493}'::smallint[]),
+  ('White/Red (W)', 5613, 72.8, 132, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{359,340,118,405,477,123,339,459,308,361,169,349,145,469,370,383,325,493}'::smallint[]),
+  ('White/Red', 5613, 72.8, 132, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{359,340,118,405,477,123,339,459,308,361,169,349,145,469,370,383,325,493}'::smallint[]),
+  ('Red (W)', 5109, 72, 126, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{301,309,87,336,430,97,320,392,263,340,125,290,111,380,335,333,272,388}'::smallint[]),
+  ('Red', 5109, 65.6, 121, '{4,4,3,4,5,3,4,5,4,4,3,4,3,5,4,4,4,5}'::smallint[], '{4,6,18,2,14,16,12,10,8,5,15,13,17,11,1,3,7,9}'::smallint[], '{301,309,87,336,430,97,320,392,263,340,125,290,111,380,335,333,272,388}'::smallint[])
+) as v (name, yards, rating, slope, par, stroke_index, hole_yards)
+join public.courses c on c.source = 'opengolfapi' and c.source_ref = '2d201c28-68ec-4897-b7b1-8f19c8984d26'
 on conflict do nothing;
 
 -- Erin Hills (Erin, WI)

@@ -5,7 +5,8 @@
 //   supabase/seed/course-library-report.md   what it imported, and everything it didn't and why
 //
 // It never guesses. A course is imported only when exactly one OpenGolf record in the right
-// state has every word of the name, and that record has tees, pars and a full stroke index.
+// state has every word of the name, and that record has tees and pars. One with no stroke index
+// is imported with a placeholder (holes numbered in order) and listed separately in the report.
 // When several records fit, the report lists them; put the id you want in PICKS and run again.
 //
 //   node scripts/import-course-library.mjs [--cache <dir>]
@@ -47,31 +48,23 @@ const SEED_LIST = [
   { area: 'Sandhills, NC', label: 'Tot Hill Farm', skip: IN_LIBRARY },
   { area: 'Sandhills, NC', label: 'Tobacco Road', q: 'tobacco road', state: 'NC', words: ['tobacco', 'road'] },
   ...[2, 3, 4, 5, 7, 8, 10].map((n) => ({ area: 'Pinehurst, NC', label: `Pinehurst No. ${n}`, q: 'pinehurst', state: 'NC', words: ['pinehurst'], number: n })),
-  { area: 'Dormie Network', label: 'ArborLinks (NE)', q: 'arborlinks', state: 'NE', words: ['arborlinks'] },
   { area: 'Dormie Network', label: 'Ballyhack (VA)', q: 'ballyhack', state: 'VA', words: ['ballyhack'] },
   { area: 'Dormie Network', label: 'Briggs Ranch (TX)', q: 'briggs ranch', state: 'TX', words: ['briggs', 'ranch'] },
   { area: 'Dormie Network', label: 'Dormie Club (NC)', q: 'dormie club', state: 'NC', words: ['dormie', 'club'] },
   { area: 'Dormie Network', label: 'Hidden Creek (NJ)', q: 'hidden creek', state: 'NJ', words: ['hidden', 'creek'] },
   { area: 'Dormie Network', label: 'Hunting Hawk (VA)', q: 'hunting hawk', state: 'VA', words: ['hunting', 'hawk'] },
-  { area: 'Dormie Network', label: 'GrayBull (NE)', q: 'graybull', state: 'NE', words: ['graybull'] },
   { area: 'Kohler, WI', label: 'Whistling Straits: Straits', q: 'whistling straits', state: 'WI', words: ['whistling', 'straits'], not: ['irish'],
     unsure: 'The record is named for the whole club, so it may not be the Straits course. Check its card, then pick it.' },
-  { area: 'Kohler, WI', label: 'Whistling Straits: Irish', q: 'whistling straits', state: 'WI', words: ['whistling', 'straits', 'irish'] },
-  { area: 'Kohler, WI', label: 'Blackwolf Run: River', q: 'blackwolf run', state: 'WI', words: ['blackwolf', 'river'] },
-  { area: 'Kohler, WI', label: 'Blackwolf Run: Meadow Valleys', q: 'blackwolf run', state: 'WI', words: ['blackwolf', 'meadow'] },
   { area: 'Near Kohler, WI', label: 'Erin Hills', q: 'erin hills', state: 'WI', words: ['erin', 'hills'] },
-  { area: 'Near Kohler, WI', label: 'Lawsonia: Links', q: 'lawsonia', state: 'WI', words: ['lawsonia', 'links'] },
-  { area: 'Near Kohler, WI', label: 'Lawsonia: Woodlands', q: 'lawsonia', state: 'WI', words: ['lawsonia', 'woodlands'] },
-  { area: 'Sand Valley, WI', label: 'Sand Valley', q: 'sand valley', state: 'WI', words: ['sand', 'valley'], not: ['mammoth', 'lido', 'sedge', 'sandbox'] },
-  { area: 'Sand Valley, WI', label: 'Mammoth Dunes', q: 'mammoth dunes', state: 'WI', words: ['mammoth', 'dunes'] },
-  { area: 'Sand Valley, WI', label: 'Lido', q: 'lido', state: 'WI', words: ['lido'] },
-  { area: 'Sand Valley, WI', label: 'Sedge Valley', q: 'sedge valley', state: 'WI', words: ['sedge', 'valley'] },
-  { area: 'Sand Valley, WI', label: 'The Sandbox (par 3)', q: 'sandbox', state: 'WI', words: ['sandbox'] },
 ];
 
 // Your choice where several records fit: label → OpenGolf course id (from the report).
 const PICKS = {
-  // 'Pinehurst No. 4': '00000000-0000-0000-0000-000000000000',
+  'Streamsong Blue': 'fe4adccc-d0ff-4c44-8b63-367a959e47d4',
+  'Streamsong Red': 'bf3cfb6e-ec06-4d5c-856f-35df9c045c4e',
+  'Pinehurst No. 2': '86620a66-2f67-409e-8aaa-8d503d820631',
+  'Pinehurst No. 7': '540541fb-8e7a-4ef4-96e3-d3d0b4b6a8e9',
+  'Whistling Straits: Straits': '2d201c28-68ec-4897-b7b1-8f19c8984d26',
 };
 
 let requests = 0;
@@ -152,6 +145,7 @@ const describe = (c, extra = '') => `\`${c.id}\` ${c.name} · ${[c.city, c.state
 const imported = [];
 const ambiguous = [];
 const incomplete = [];
+const needsIndex = [];
 const unmatched = [];
 const skipped = [];
 const statements = [];
@@ -183,6 +177,16 @@ for (const entry of SEED_LIST) {
     continue;
   }
   const data = await load(candidates[0].id);
+  // A course with tees and pars but no stroke index is imported with the holes numbered 1 to n
+  // as a placeholder. The app shows a warning on any course whose stroke index is still in that
+  // order, until it is entered from the scorecard.
+  if (data.missing.length === 1 && data.missing[0] === 'no stroke index') {
+    data.si = data.par.map((_, i) => i + 1);
+    statements.push(courseSql(data));
+    needsIndex.push(`- **${entry.label}** → ${describe(candidates[0], ` · ${data.tees.length} tees`)}`);
+    console.log(`ok*  ${entry.label} (no stroke index)`);
+    continue;
+  }
   if (data.missing.length) {
     incomplete.push(`- **${entry.label}** → ${describe(candidates[0])} · ${data.missing.join(', ')}`);
     continue;
@@ -196,9 +200,9 @@ const section = (title, note, lines) => (lines.length ? `## ${title} (${lines.le
 const report = `# Course library import report
 
 Generated by \`scripts/import-course-library.mjs\` on ${new Date().toISOString().slice(0, 10)}. Course data: OpenGolf (ODbL 1.0).
-${SEED_LIST.length} courses on the seed list: ${imported.length} imported, ${ambiguous.length} ambiguous, ${incomplete.length} incomplete at the source, ${unmatched.length} not found, ${skipped.length} already in the library.
+${SEED_LIST.length} courses on the seed list: ${imported.length + needsIndex.length} imported (${needsIndex.length} of them without a stroke index), ${ambiguous.length} ambiguous, ${incomplete.length} incomplete at the source, ${unmatched.length} not found, ${skipped.length} already in the library.
 
-${section('Ambiguous: pick one', 'More than one OpenGolf record fits, or the only one cannot be confirmed from its name. Put the id you want in `PICKS` in the script and run it again, or add the course from the app (Course library → Add a course).', ambiguous)}${section('Found, but incomplete at the source', 'One record fits, but it lacks data the app needs, so it was not imported. Add it from the app and fill the gaps from the scorecard.', incomplete)}${section('Not found', 'Nothing in the right state has every word of the name. Add these by hand from the app.', unmatched)}${section('Imported', 'In `course-library.sql`. Spot-check ratings and slopes against the USGA database before a trip uses them.', imported)}${section('Already in the library', 'Not looked up.', skipped)}`;
+${section('Ambiguous: pick one', 'More than one OpenGolf record fits, or the only one cannot be confirmed from its name. Put the id you want in `PICKS` in the script and run it again, or add the course from the app (Course library → Add a course).', ambiguous)}${section('Imported without a stroke index: fill it in', 'OpenGolf has tees and pars for these but no stroke index. They are in `course-library.sql` with the holes numbered 1 to 18 as a placeholder, and the app flags them until the real stroke index is entered from the scorecard. Do not use them for a net game before then.', needsIndex)}${section('Found, but incomplete at the source', 'One record fits, but it lacks data the app needs, so it was not imported. Add it from the app and fill the gaps from the scorecard.', incomplete)}${section('Not found', 'Nothing in the right state has every word of the name. Add these by hand from the app.', unmatched)}${section('Imported', 'In `course-library.sql`. Spot-check ratings and slopes against the USGA database before a trip uses them.', imported)}${section('Already in the library', 'Not looked up.', skipped)}`;
 
 const header = `-- Course library: the seed list from docs/plan.md, as matched on OpenGolfAPI.
 -- Generated by scripts/import-course-library.mjs; do not edit by hand (edit courses in the app).
@@ -208,4 +212,4 @@ const header = `-- Course library: the seed list from docs/plan.md, as matched o
 `;
 writeFileSync(join(ROOT, 'supabase/seed/course-library.sql'), header + statements.join('\n'));
 writeFileSync(join(ROOT, 'supabase/seed/course-library-report.md'), report);
-console.log(`\n${imported.length} imported · ${ambiguous.length} ambiguous · ${incomplete.length} incomplete · ${unmatched.length} not found · ${skipped.length} skipped · ${requests} API requests`);
+console.log(`\n${imported.length} imported · ${needsIndex.length} imported without stroke index · ${ambiguous.length} ambiguous · ${incomplete.length} incomplete · ${unmatched.length} not found · ${skipped.length} skipped · ${requests} API requests`);

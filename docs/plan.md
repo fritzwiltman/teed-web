@@ -210,10 +210,9 @@ new leader (only after every group is through 2 holes, judged on score to par); 
 | Palm Beach Gardens, FL | PGA National: Champion, Fazio, Palmer |
 | Sandhills, NC | Southern Pines, Mid Pines, Pine Needles, Tobacco Road, Tot Hill Farm |
 | Pinehurst, NC | No. 2, No. 3, No. 4, No. 5, No. 7, No. 8, No. 10 |
-| Dormie Network | ArborLinks (NE), Ballyhack (VA), Briggs Ranch (TX), Dormie Club (NC), Hidden Creek (NJ), Hunting Hawk (VA); GrayBull (NE) when open; confirm roster on import |
-| Kohler, WI | Whistling Straits: Straits, Irish; Blackwolf Run: River, Meadow Valleys |
-| Near Kohler, WI | Erin Hills; Lawsonia: Links, Woodlands |
-| Sand Valley, WI | Sand Valley, Mammoth Dunes, Lido, Sedge Valley, The Sandbox (par 3) |
+| Dormie Network | Ballyhack (VA), Briggs Ranch (TX), Dormie Club (NC), Hidden Creek (NJ), Hunting Hawk (VA) |
+| Kohler, WI | Whistling Straits: Straits |
+| Near Kohler, WI | Erin Hills |
 
 ## Theme
 

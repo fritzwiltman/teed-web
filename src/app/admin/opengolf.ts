@@ -81,6 +81,14 @@ export function isPermutation(values: (number | null)[]): boolean {
   return sorted.every((v, i) => v === i + 1);
 }
 
+/**
+ * A stroke index of 1, 2, 3… in hole order is what an import leaves when the source has none.
+ * No real course is rated that way, so it marks "not entered yet".
+ */
+export function isPlaceholderIndex(strokeIndex: number[]): boolean {
+  return strokeIndex.length > 1 && strokeIndex.every((v, i) => v === i + 1);
+}
+
 /** Turns OpenGolfAPI's course, tees and holes into a course draft, noting what was missing. */
 export function mapOpenGolf(
   course: OpenGolfCourse,

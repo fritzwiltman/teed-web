@@ -5,6 +5,7 @@ import {
   applyFresh,
   diffTees,
   isPermutation,
+  isPlaceholderIndex,
   mapOpenGolf,
 } from './opengolf';
 
@@ -108,6 +109,13 @@ describe('mapOpenGolf', () => {
     const { draft, gaps } = mapOpenGolf(COURSE, TEES, holes(SI.map(() => null)));
     expect(gaps.strokeIndex).toBe(true);
     expect(isPermutation(draft.tees[0].stroke_index)).toBe(true); // a placeholder the database accepts, to be overwritten
+  });
+
+  it('recognises the placeholder later, so the course stays flagged until a real stroke index is entered', () => {
+    const placeholder = mapOpenGolf(COURSE, TEES, holes(SI.map(() => null))).draft.tees[0]
+      .stroke_index;
+    expect(isPlaceholderIndex(placeholder)).toBe(true);
+    expect(isPlaceholderIndex(SI)).toBe(false);
   });
 
   it('flags a stroke index that repeats a number', () => {

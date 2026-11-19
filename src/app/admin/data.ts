@@ -58,7 +58,7 @@ export interface CourseSummary {
   location: string | null;
   source: string;
   ratings_checked_at: string | null;
-  tees: { id: string }[];
+  tees: { id: string; stroke_index: number[] }[];
 }
 
 const TRIP_COLUMNS =
@@ -259,7 +259,7 @@ export class AdminData {
   async courses(): Promise<CourseSummary[]> {
     const { data, error } = await this.db
       .from('courses')
-      .select('id, name, location, source, ratings_checked_at, tees(id)')
+      .select('id, name, location, source, ratings_checked_at, tees(id, stroke_index)')
       .order('name');
     if (error) fail(error, "Couldn't load the course library.");
     return data as unknown as CourseSummary[];

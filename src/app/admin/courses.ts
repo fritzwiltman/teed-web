@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AdminData, AdminError, CourseSummary } from './data';
+import { isPlaceholderIndex } from './opengolf';
 
 /** The course library: every course any trip can use. */
 @Component({
@@ -38,7 +39,11 @@ import { AdminData, AdminError, CourseSummary } from './data';
                   {{ course.tees.length === 1 ? 'tee' : 'tees' }}</span
                 >
               </span>
-              <span aria-hidden="true">›</span>
+              @if (needsIndex(course)) {
+                <span class="badge draft">Needs stroke index</span>
+              } @else {
+                <span aria-hidden="true">›</span>
+              }
             </a>
           }
         </section>
@@ -77,6 +82,10 @@ export class Courses {
         (e: unknown) =>
           this.error.set(e instanceof AdminError ? e.message : "Couldn't load the course library."),
       );
+  }
+
+  protected needsIndex(course: CourseSummary): boolean {
+    return course.tees.some((tee) => isPlaceholderIndex(tee.stroke_index));
   }
 
   protected text(event: Event): string {

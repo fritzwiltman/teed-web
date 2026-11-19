@@ -12,6 +12,7 @@ import {
   diffTees,
   fetchOpenGolf,
   isPermutation,
+  isPlaceholderIndex,
 } from './opengolf';
 import { resizePhoto } from './photo';
 
@@ -53,9 +54,10 @@ type HoleField = 'par' | 'stroke_index' | 'hole_yards';
           </label>
         }
 
-        @if (gaps().strokeIndex) {
+        @if (needsIndex()) {
           <p class="banner" role="status">
-            OpenGolf has no stroke index for this course. Enter it from the scorecard.
+            The stroke index is still a placeholder (1 to {{ c.tees[0]?.par?.length }} in order).
+            Enter it from the scorecard.
           </p>
         }
         @if (gaps().par) {
@@ -378,6 +380,11 @@ export class CourseEdit {
     const url = this.data.photoUrl(this.draft()?.photo_path ?? null);
     return url ? `${url}?v=${this.photoVersion()}` : null;
   });
+
+  /** True while any tee's stroke index is the in-order placeholder an import leaves when the source has none. */
+  protected readonly needsIndex = computed(() =>
+    (this.draft()?.tees ?? []).some((tee) => isPlaceholderIndex(tee.stroke_index)),
+  );
 
   protected readonly checked = computed(() => {
     const at = this.draft()?.ratings_checked_at;
