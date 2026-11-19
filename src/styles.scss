@@ -68,7 +68,7 @@
   --font-heading: 'Bitter', Georgia, serif;
   --font-body: 'Libre Franklin', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --radius: 10px;
+  --radius: 2px; // nearly square, like a printed scorecard; only the floating nav is rounded
   --tap: 52px; // minimum height of anything you tap on the course
   @include light-tokens;
 }

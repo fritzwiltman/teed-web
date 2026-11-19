@@ -335,7 +335,12 @@ select results_eq('select name from public.trips', $$ values ('Trip Draft') $$, 
 -- ── Co-admin ────────────────────────────────────────────────────────────────
 
 select tests.as_user('dan');
-select results_eq('select count(*) from public.player_codes', 'select 4::bigint', 'a co-admin sees their trip''s login codes and no other trip''s');
+select is_empty('select * from public.player_codes', 'a co-admin cannot read login codes (owner only)');
+select is_empty('select * from public.spectator_codes', 'a co-admin cannot read spectator codes (owner only)');
+with d as (delete from public.players where id = tests.id('cara') returning 1)
+select is((select count(*) from d), 0::bigint, 'a co-admin cannot delete a player (owner only)');
+with d as (delete from public.rounds where id = tests.id('round:one') returning 1)
+select is((select count(*) from d), 0::bigint, 'a co-admin cannot delete a round (owner only)');
 select results_eq('select count(*) from public.trips', 'select 1::bigint', 'a co-admin still sees only their own trip');
 select isnt_empty('select * from public.itinerary_proposals', 'a co-admin sees proposed changes');
 select lives_ok(
@@ -380,6 +385,7 @@ select is_empty($$ select * from public.players where trip_id = tests.id('trip:t
 select lives_ok(
   $$ insert into public.spectator_codes (trip_id, code) values (tests.id('trip:one'), 'TONE-WATCH-2B') $$,
   'an owner can create a spectator code');
+select results_eq('select count(*) from public.player_codes', 'select 4::bigint', 'an owner sees their trip''s login codes and no other trip''s');
 with u as (update public.trips set status = 'final' where id = tests.id('trip:one') returning 1)
 select is((select count(*) from u), 1::bigint, 'an owner can change the trip status');
 with u as (update public.trips set status = 'final' where id = tests.id('trip:two') returning 1)

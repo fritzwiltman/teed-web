@@ -127,7 +127,7 @@ import { InstallService } from '../core/install';
       place-items: center;
       aspect-ratio: 16 / 9;
       border: 1px dashed var(--line);
-      border-radius: 6px;
+      border-radius: var(--radius);
       color: var(--muted);
       font: 500 0.75rem var(--font-mono);
       letter-spacing: 0.06em;

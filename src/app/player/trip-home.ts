@@ -14,7 +14,7 @@ interface RoundRow {
 }
 
 /**
- * Trip home. Placeholder for M2: shows that the login worked (trip, who you are, today's round).
+ * Trip home. Placeholder for M2: trip, who you are, and the round that matters now.
  * The real screen (course photo, "Continue scoring", leaderboard snapshot) comes with M4 and M6.
  */
 @Component({
@@ -33,63 +33,43 @@ interface RoundRow {
               <span class="label">Playing as</span>
               <strong class="who">{{ player.name }}</strong>
             </div>
-            @if (player.role === 'co_admin') {
-              <div class="row"><span class="label">Role</span><span>Co-admin</span></div>
-            }
-          } @else {
+          }
+          @if (role(); as r) {
             <div class="row">
-              <span class="label">Watching as</span>
-              <strong class="who">Spectator</strong>
-            </div>
-            <div class="row">
-              <span class="muted">Read-only: you can follow scores but not enter them.</span>
+              <span class="label">Role</span>
+              <span>{{ r }}</span>
             </div>
           }
         </section>
 
-        <section class="card" aria-label="Round">
-          @switch (rounds().state) {
-            @case ('loading') {
-              <div class="row"><span class="muted">Loading today's round…</span></div>
-            }
-            @case ('offline') {
+        @if (shown(); as r) {
+          <section class="card" aria-label="Round">
+            <div class="row">
+              <span class="label round-label">{{ r.label }}</span>
+            </div>
+            <div class="row">
+              <strong class="course">{{ r.round.courses?.name }}</strong>
+            </div>
+            @if (r.round.tee_time) {
               <div class="row">
-                <span class="muted"
-                  >Can't load the rounds right now. They'll appear when you're back in signal.</span
-                >
+                <span class="label">Tee time</span>
+                <span class="mono">{{ time(r.round.tee_time) }}</span>
               </div>
             }
-            @default {
-              @if (shown(); as r) {
-                <div class="row">
-                  <span class="label">{{ r.heading }}</span>
-                  <span class="mono"
-                    >R{{ r.round.round_number }} · {{ day(r.round.play_date) }}</span
-                  >
-                </div>
-                <div class="row">
-                  <strong class="course">{{ r.round.courses?.name }}</strong>
-                </div>
-                <div class="row">
-                  <span class="label">Tee time</span>
-                  <span class="mono">{{ time(r.round.tee_time) || 'TBD' }}</span>
-                </div>
-                <div class="row">
-                  <span class="label">Tees</span>
-                  <span>{{ r.round.tees?.name }}</span>
-                </div>
-                <div class="row">
-                  <span class="label">Format</span>
-                  <span>{{ formats(r.round) }}</span>
-                </div>
-              } @else {
-                <div class="row">
-                  <span class="muted">No rounds have been set up for this trip yet.</span>
-                </div>
-              }
+            @if (r.round.tees; as tee) {
+              <div class="row">
+                <span class="label">Tees</span>
+                <span>{{ tee.name }}</span>
+              </div>
             }
-          }
-        </section>
+            @if (formats(r.round); as f) {
+              <div class="row">
+                <span class="label">Format</span>
+                <span>{{ f }}</span>
+              </div>
+            }
+          </section>
+        }
       </main>
     }
   `,
@@ -103,35 +83,48 @@ interface RoundRow {
       font-family: var(--font-heading);
       font-size: 1.25rem;
     }
+    .round-label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   `,
 })
 export class TripHome {
   private readonly supabase = inject(SUPABASE);
   protected readonly session = inject(SessionService).session;
 
-  protected readonly rounds = signal<{ state: 'loading' | 'offline' | 'ready'; rows: RoundRow[] }>({
-    state: 'loading',
-    rows: [],
-  });
+  private readonly rounds = signal<RoundRow[]>([]);
 
   protected readonly dates = computed(() => {
     const trip = this.session()?.trip;
     return trip ? formatDateRange(trip.start_date, trip.end_date) : '';
   });
 
-  /** Today's round if there is one, otherwise the next one, otherwise the last one played. */
-  protected readonly shown = computed(() => {
-    const rows = this.rounds().rows;
-    const today = localDate();
-    const todays = rows.find((r) => r.play_date === today);
-    if (todays) return { heading: "Today's round", round: todays };
-    const next = rows.find((r) => r.play_date > today);
-    if (next) return { heading: 'No round today · next', round: next };
-    const last = rows.at(-1);
-    return last ? { heading: 'No round today · last', round: last } : null;
+  /** Owner, Co-admin or Spectator. Regular players have no role worth showing. */
+  protected readonly role = computed(() => {
+    const s = this.session();
+    if (!s) return null;
+    if (!s.player) return 'Spectator';
+    if (s.trip.owner_player_id === s.player.id) return 'Owner';
+    return s.player.role === 'co_admin' ? 'Co-admin' : null;
   });
 
-  protected readonly day = formatDay;
+  /** Today's round, else the next one, else the trip's final round. Label e.g. "Next · R3 · Fri, Oct 9". */
+  protected readonly shown = computed(() => {
+    const rows = this.rounds();
+    const today = localDate();
+    const todays = rows.find((r) => r.play_date === today);
+    if (todays) return { label: `Today · R${todays.round_number}`, round: todays };
+    const next = rows.find((r) => r.play_date > today);
+    if (next)
+      return { label: `Next · R${next.round_number} · ${formatDay(next.play_date)}`, round: next };
+    const last = rows.at(-1);
+    return last
+      ? { label: `Final round · R${last.round_number} · ${formatDay(last.play_date)}`, round: last }
+      : null;
+  });
+
   protected readonly time = formatTime;
 
   constructor() {
@@ -139,14 +132,14 @@ export class TripHome {
   }
 
   protected formats(round: RoundRow): string {
-    return round.round_formats.map((f) => formatName(f.format_key)).join(' + ') || 'TBD';
+    return round.round_formats.map((f) => formatName(f.format_key)).join(' + ');
   }
 
   private async load(): Promise<void> {
     const trip = this.session()?.trip;
     if (!trip) return;
     try {
-      const { data, error } = await this.supabase
+      const { data } = await this.supabase
         .from('rounds')
         .select(
           'round_number, play_date, tee_time, status, courses(name), tees(name), round_formats(format_key)',
@@ -154,13 +147,9 @@ export class TripHome {
         .eq('trip_id', trip.id)
         .order('play_date')
         .order('round_number');
-      this.rounds.set(
-        error
-          ? { state: 'offline', rows: [] }
-          : { state: 'ready', rows: (data ?? []) as unknown as RoundRow[] },
-      );
+      this.rounds.set((data ?? []) as unknown as RoundRow[]);
     } catch {
-      this.rounds.set({ state: 'offline', rows: [] });
+      // no signal: the round card stays hidden until there is something to show
     }
   }
 }

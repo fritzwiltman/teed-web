@@ -41,6 +41,8 @@ insert into public.players (id, trip_id, name, initials, role) values
   (tests.id('early'), tests.id('trip:draft'), 'Early', 'E',  'player'),
   (tests.id('late'),  tests.id('trip:final'), 'Late',  'L',  'player');
 
+update public.trips set owner_player_id = tests.id('ben') where id = tests.id('trip:live');
+
 insert into public.player_codes (player_id, code) values
   (tests.id('fritz'), 'VERO-FW27-K4M9'),
   (tests.id('ben'),   'VERO-BK27-Q2X7'),
@@ -71,7 +73,8 @@ select is(
   jsonb_build_object(
     'status', 'ok', 'role', 'player',
     'trip', jsonb_build_object('id', tests.id('trip:live'), 'name', 'Vero Beach 2027', 'slug', 'VERO', 'status', 'live',
-                               'location', null, 'start_date', '2027-01-11', 'end_date', '2027-01-15'),
+                               'location', null, 'start_date', '2027-01-11', 'end_date', '2027-01-15',
+                               'owner_player_id', tests.id('ben')),
     'player', jsonb_build_object('id', tests.id('fritz'), 'name', 'Fritz', 'initials', 'FW', 'role', 'co_admin')),
   'a valid code returns the trip and the player');
 select results_eq(
@@ -126,7 +129,18 @@ select throws_ok(
   '42501', null, 'a player cannot issue codes, not even their own');
 
 select tests.as_user('phone1');   -- Fritz, co-admin
-select matches(public.regenerate_player_code(tests.id('ben')), '^VERO-BK27-[A-HJ-NP-Z2-9]{4}$', 'a trip admin gets a new code in the standard format');
+select throws_ok(
+  $$ select public.regenerate_player_code(tests.id('ben')) $$,
+  '42501', null, 'nor can a co-admin');
+
+-- Ben is the trip's owner_player_id, which is for display only.
+select tests.as_user('phone2');
+select is_empty('select * from public.player_codes', 'being the owner''s player gives no access to codes');
+with u as (update public.trips set name = 'Mine now' returning 1)
+select is((select count(*) from u), 0::bigint, '...and no admin rights');
+
+select tests.as_user('owner');    -- the owner, signed in by email
+select matches(public.regenerate_player_code(tests.id('ben')), '^VERO-BK27-[A-HJ-NP-Z2-9]{4}$', 'the owner gets a new code in the standard format');
 select tests.as_postgres();
 
 select is_empty($$ select * from public.trip_sessions where player_id = tests.id('ben') $$, 'regenerating a code signs out the phones that used the old one');

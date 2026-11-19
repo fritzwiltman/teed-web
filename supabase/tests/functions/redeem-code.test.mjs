@@ -106,9 +106,10 @@ test('a valid code logs the phone in and returns the trip and player', async () 
   assert.equal(res.body.role, 'player');
   assert.equal(res.body.trip.name, 'Southern Pines 2026');
   assert.equal(res.body.trip.status, 'live');
+  assert.equal(res.body.trip.owner_player_id, res.body.player.id, 'Fritz is the trip owner');
   assert.deepEqual(
     { name: res.body.player.name, initials: res.body.player.initials, role: res.body.player.role },
-    { name: 'Fritz', initials: 'FW', role: 'co_admin' },
+    { name: 'Fritz', initials: 'FW', role: 'player' },
   );
 
   assert.deepEqual(await read(phone, 'trips?select=name'), [{ name: 'Southern Pines 2026' }], 'now it can read its trip');

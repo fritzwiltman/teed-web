@@ -73,7 +73,7 @@ the Data API doesn't expose)
 | Table | Key columns |
 | --- | --- |
 | `app_admins` | user id. Who may create trips and edit the course library (email sign-up is open, so it's an explicit list) |
-| `trips` | owner, name, slug (`VERO`), dates, status (draft/live/final), theme, house rules (handicap allowance, strokes off low man, pick-up at net double, spectators see money, handicap lock date), banker |
+| `trips` | owner, name, slug (`VERO`), dates, status (draft/live/final), theme, house rules (handicap allowance, strokes off low man, pick-up at net double, spectators see money, handicap lock date), banker, owner's player (display only) |
 | `players` | trip, name, initials, role (player/co-admin), handicap index, index entered/locked at. No codes or GHIN numbers here: everyone on the trip can read this table |
 | `player_codes` | player, code, issued at. Trip admins only |
 | `player_ghin` | player, GHIN number. Players and admins, never spectators |
@@ -101,8 +101,10 @@ the Data API doesn't expose)
   case, with or without dashes. Regenerating or revoking a code signs out every phone that used it.
 - Rate limit on failed codes: 5 a minute per device, 30 a minute per IP (looser, since a group shares one Wi-Fi
   address), then a 5-minute lockout.
-- Owner (Fritz): email magic link, listed in `app_admins`; owns trips and the course library. Co-admins: any
-  player, per trip.
+- Owner (Fritz): email magic link, listed in `app_admins`. Owner-only: creating and deleting trips, the course
+  library, login codes, deleting players or rounds. `trips.owner_player_id` marks the owner's player so trip home
+  can show "Owner"; it grants nothing, and the owner's player code logs in with ordinary player rights.
+- Co-admins: any player, per trip, acting through their code: pairings, score fixes, rounds and trip info.
 - RLS everywhere: players read only their trip (once it is live or final) and write scores and presses only for
   their group while the trip is live and the round isn't final; spectators read-only and never see GHIN numbers,
   codes or the checklist; only owner/co-admins write setup. Handicap check-in goes through `submit_handicap()`.

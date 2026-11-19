@@ -9,6 +9,8 @@ export interface TripInfo {
   location: string | null;
   start_date: string;
   end_date: string;
+  /** Which player is the trip's owner. Display only: it grants nothing. */
+  owner_player_id?: string | null;
 }
 
 export interface PlayerInfo {
@@ -82,7 +84,7 @@ export class SessionService {
       const { data, error } = await this.supabase
         .from('trip_sessions')
         .select(
-          'player_id, trips(id, name, slug, status, location, start_date, end_date), players(id, name, initials, role)',
+          'player_id, trips(id, name, slug, status, location, start_date, end_date, owner_player_id), players(id, name, initials, role)',
         )
         .eq('user_id', auth.session.user.id)
         .eq('trip_id', saved.trip.id)

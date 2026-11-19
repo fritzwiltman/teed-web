@@ -58,7 +58,7 @@ import { ThemeChoice, ThemeService } from '../core/theme';
     .choices {
       display: inline-flex;
       border: 1px solid var(--frame);
-      border-radius: 999px;
+      border-radius: var(--radius);
       overflow: hidden;
     }
     .choices button {

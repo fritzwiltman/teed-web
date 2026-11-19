@@ -80,7 +80,7 @@ import { InstallCard } from './install-card';
       min-height: 3.5rem;
       padding: 0 0.75rem;
       border: 2px solid var(--frame);
-      border-radius: 8px;
+      border-radius: var(--radius);
       background: var(--field);
       color: var(--ink);
       font: 600 1.3rem var(--font-mono);
