@@ -55,7 +55,35 @@ import { AdminData, AdminError, Trip } from './data';
 
       <footer>
         <span class="label">{{ auth.email() }}</span>
-        <button type="button" class="link-button" (click)="signOut()">Sign out</button>
+        @if (settingPassword()) {
+          <form class="password" (submit)="savePassword($event)" novalidate>
+            <label class="field">
+              <span class="label">New password</span>
+              <input
+                class="input"
+                name="new-password"
+                type="password"
+                autocomplete="new-password"
+                [value]="newPassword()"
+                (input)="typePassword($event)"
+              />
+            </label>
+            @if (passwordError(); as text) {
+              <p class="error-text" role="alert">{{ text }}</p>
+            }
+            <div class="actions">
+              <button class="button small" type="submit">Save password</button>
+              <button type="button" class="button small quiet" (click)="settingPassword.set(false)">
+                Cancel
+              </button>
+            </div>
+          </form>
+        } @else {
+          <button type="button" class="link-button" (click)="startPassword()">
+            {{ passwordSaved() ? 'Password saved' : 'Set password' }}
+          </button>
+          <button type="button" class="link-button" (click)="signOut()">Sign out</button>
+        }
       </footer>
     </main>
   `,
@@ -75,6 +103,13 @@ import { AdminData, AdminError, Trip } from './data';
       flex-direction: column;
       align-items: center;
       margin-top: 1rem;
+    }
+    .password {
+      align-self: stretch;
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+      margin-top: 0.5rem;
     }
   `,
 })
@@ -99,6 +134,37 @@ export class MyTrips {
       (e: unknown) =>
         this.error.set(e instanceof AdminError ? e.message : "Couldn't load your trips."),
     );
+  }
+
+  // Setting a password, for signing in without the emailed link.
+  protected readonly settingPassword = signal(false);
+  protected readonly newPassword = signal('');
+  protected readonly passwordError = signal<string | null>(null);
+  protected readonly passwordSaved = signal(false);
+
+  protected startPassword(): void {
+    this.newPassword.set('');
+    this.passwordError.set(null);
+    this.settingPassword.set(true);
+  }
+
+  protected typePassword(event: Event): void {
+    this.newPassword.set((event.target as HTMLInputElement).value);
+    this.passwordError.set(null);
+  }
+
+  protected async savePassword(event: Event): Promise<void> {
+    event.preventDefault();
+    if (this.newPassword().length < 8) {
+      this.passwordError.set('Use at least 8 characters.');
+      return;
+    }
+    if (await this.auth.setPassword(this.newPassword())) {
+      this.settingPassword.set(false);
+      this.passwordSaved.set(true);
+    } else {
+      this.passwordError.set("That password wasn't accepted. Try a longer one.");
+    }
   }
 
   protected dates(trip: Trip): string {

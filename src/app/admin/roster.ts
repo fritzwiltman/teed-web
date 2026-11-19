@@ -57,6 +57,9 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
             <span class="who">
               <strong>
                 {{ p.name }}
+                @if (trip()?.owner_player_id === p.id) {
+                  <span class="label"> · Owner</span>
+                }
                 @if (p.role === 'co_admin') {
                   <span class="label"> · Co-admin</span>
                 }
@@ -120,6 +123,16 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
                     >
                       {{ p.role === 'co_admin' ? 'Remove co-admin' : 'Make co-admin' }}
                     </button>
+                    @if (trip()?.owner_player_id !== p.id) {
+                      <button
+                        type="button"
+                        class="button small quiet"
+                        [disabled]="busy()"
+                        (click)="thisIsMe(p)"
+                      >
+                        This is me
+                      </button>
+                    }
                   </div>
                 }
                 @case ('edit') {
@@ -511,6 +524,14 @@ export class Roster {
       )
     )
       this.open.set(null);
+  }
+
+  /** Marks this player as the organizer's own, so their trip home says Owner. It grants nothing. */
+  protected async thisIsMe(player: RosterPlayer): Promise<void> {
+    const done = await this.run(async () =>
+      this.trip.set(await this.data.updateTrip(this.id(), { owner_player_id: player.id })),
+    );
+    if (done) this.open.set(null);
   }
 
   protected async createSpectator(): Promise<void> {

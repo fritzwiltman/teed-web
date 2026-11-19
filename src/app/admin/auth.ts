@@ -2,12 +2,13 @@ import { Injectable, inject, signal } from '@angular/core';
 import { ADMIN_SUPABASE } from '../core/supabase';
 
 export type SendOutcome = 'sent' | 'rate_limited' | 'offline' | 'error';
-export type VerifyOutcome = 'ok' | 'wrong_code' | 'offline' | 'error';
+export type SignInOutcome = 'ok' | 'wrong' | 'rate_limited' | 'offline' | 'error';
 
 /**
- * Organizer sign-in: an email magic link (or the 6-digit code from the same email, which is the
- * only way in from the installed home-screen app on an iPhone, where links open in Safari).
- * Owner powers come from being listed in app_admins; anyone else who signs in gets nothing.
+ * Organizer sign-in: email and password, or an emailed magic link (handy on a desktop; on an
+ * iPhone a link opens in Safari, never in the installed app, which is why the password is the
+ * main way in). Owner powers come from being listed in app_admins; anyone else who signs in
+ * gets nothing.
  */
 @Injectable({ providedIn: 'root' })
 export class AdminAuth {
@@ -55,7 +56,7 @@ export class AdminAuth {
     }
   }
 
-  /** Emails a sign-in link and code. Never says whether the address is known. */
+  /** Emails a sign-in link. Never says whether the address is known. */
   async send(email: string): Promise<SendOutcome> {
     try {
       const { error } = await this.supabase.auth.signInWithOtp({
@@ -72,18 +73,28 @@ export class AdminAuth {
     }
   }
 
-  /** Signs in with the 6-digit code from the email. */
-  async verify(email: string, code: string): Promise<VerifyOutcome> {
+  async signIn(email: string, password: string): Promise<SignInOutcome> {
     try {
-      const { error } = await this.supabase.auth.verifyOtp({ email, token: code, type: 'email' });
+      const { error } = await this.supabase.auth.signInWithPassword({ email, password });
       if (error) {
         if (error.name === 'AuthRetryableFetchError') return 'offline';
-        return error.status && error.status < 500 ? 'wrong_code' : 'error';
+        if (error.status === 429) return 'rate_limited';
+        return error.status && error.status < 500 ? 'wrong' : 'error';
       }
       await this.refresh();
       return 'ok';
     } catch {
       return 'offline';
+    }
+  }
+
+  /** Sets (or changes) the signed-in organizer's password. */
+  async setPassword(password: string): Promise<boolean> {
+    try {
+      const { error } = await this.supabase.auth.updateUser({ password });
+      return !error;
+    } catch {
+      return false;
     }
   }
 

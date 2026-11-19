@@ -105,9 +105,10 @@ the Data API doesn't expose)
 - Owner (Fritz): email magic link, listed in `app_admins`. Owner-only: creating and deleting trips, the course
   library, login codes, deleting players or rounds. `trips.owner_player_id` marks the owner's player so trip home
   can show "Owner"; it grants nothing, and the owner's player code logs in with ordinary player rights.
-- Organizer sign-in is separate from the player login on the same phone (its own stored session), by magic link
-  or the 6-digit code in the same email. The code is how you sign in inside the installed app on an iPhone,
-  where links open in Safari. No new accounts are created from the sign-in screen.
+- Organizer sign-in is separate from the player login on the same phone (its own stored session): email and
+  password, with "Email me a link instead" as the second option (a link opens in Safari, never in the installed
+  app, so the password is the way in there). The password is set from My trips. No new accounts are created
+  from the sign-in screen.
 - Co-admins: any player, per trip, acting through their code: pairings, score fixes, rounds and trip info.
 - RLS everywhere: players read only their trip (once it is live or final) and write scores and presses only for
   their group while the trip is live and the round isn't final; spectators read-only and never see GHIN numbers,

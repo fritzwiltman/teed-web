@@ -116,7 +116,7 @@ export class AdminData {
 
   async updateTrip(
     id: string,
-    fields: Partial<TripFields> & { status?: TripStatus },
+    fields: Partial<TripFields> & { status?: TripStatus; owner_player_id?: string | null },
   ): Promise<Trip> {
     const { data, error } = await this.db
       .from('trips')

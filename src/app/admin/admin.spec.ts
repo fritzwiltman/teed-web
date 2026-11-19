@@ -56,7 +56,8 @@ async function boot(
     isOrganizer: signal(who === 'organizer'),
     ready: vi.fn(async () => {}),
     send: vi.fn(async () => 'sent'),
-    verify: vi.fn(async () => 'ok'),
+    signIn: vi.fn(async () => 'ok'),
+    setPassword: vi.fn(async () => true),
     signOut: vi.fn(async () => {
       auth.email.set(null);
       auth.isOrganizer.set(false);
@@ -140,42 +141,45 @@ describe('organizer area', () => {
   });
 
   describe('sign-in', () => {
-    it('emails a link, then accepts the code from the email', async () => {
+    it('signs in with email and password', async () => {
       const t = await boot('/admin/sign-in', 'nobody');
-      await t.type('#email', 'me@example.com');
-      await t.submit();
-      expect(t.auth.send).toHaveBeenCalledWith('me@example.com');
-      expect(t.page().textContent).toContain('Check me@example.com');
-
-      t.auth.verify.mockImplementation(async () => {
+      t.auth.signIn.mockImplementation(async () => {
         t.auth.email.set('me@example.com');
         t.auth.isOrganizer.set(true);
         return 'ok';
       });
-      await t.type('#otp', '12 34 56');
+      await t.type('#email', ' me@example.com ');
+      await t.type('#password', 'correct horse');
       await t.submit();
-      expect(t.auth.verify).toHaveBeenCalledWith('me@example.com', '123456');
+      expect(t.auth.signIn).toHaveBeenCalledWith('me@example.com', 'correct horse');
       expect(t.router.url).toBe('/admin');
     });
 
-    it('says so when the code is wrong', async () => {
+    it('says so when the email and password do not match', async () => {
       const t = await boot('/admin/sign-in', 'nobody');
+      t.auth.signIn.mockResolvedValue('wrong');
       await t.type('#email', 'me@example.com');
+      await t.type('#password', 'nope');
       await t.submit();
-      t.auth.verify.mockResolvedValue('wrong_code');
-      await t.type('#otp', '000000');
-      await t.submit();
-      expect(t.page().querySelector('[role=alert]')?.textContent).toContain("didn't work");
+      expect(t.page().querySelector('[role=alert]')?.textContent).toContain("don't match");
+      expect(t.router.url).toBe('/admin/sign-in');
     });
 
-    it('says so when too many emails have been sent', async () => {
+    it('emails a link instead, as the second option', async () => {
+      const t = await boot('/admin/sign-in', 'nobody');
+      await t.type('#email', 'me@example.com');
+      await t.click('Email me a link instead');
+      expect(t.auth.send).toHaveBeenCalledWith('me@example.com');
+      expect(t.auth.signIn).not.toHaveBeenCalled();
+      expect(t.page().textContent).toContain('Check me@example.com and tap the link');
+    });
+
+    it('says so when there have been too many tries', async () => {
       const t = await boot('/admin/sign-in', 'nobody');
       t.auth.send.mockResolvedValue('rate_limited');
       await t.type('#email', 'me@example.com');
-      await t.submit();
-      expect(t.page().querySelector('[role=alert]')?.textContent).toContain(
-        'Too many sign-in emails',
-      );
+      await t.click('Email me a link instead');
+      expect(t.page().querySelector('[role=alert]')?.textContent).toContain('Too many tries');
     });
   });
 
@@ -189,6 +193,18 @@ describe('organizer area', () => {
       expect(past.textContent).toContain('Southern Pines 2026');
       expect(past.querySelector('.badge')?.textContent?.trim()).toBe('Final');
       expect(page().querySelector('a.button')?.textContent).toContain('+ New trip');
+    });
+
+    it('lets the organizer set a password', async () => {
+      const t = await boot('/admin');
+      await t.click('Set password');
+      await t.type('[name=new-password]', 'short');
+      await t.submit();
+      expect(t.page().querySelector('[role=alert]')?.textContent).toContain('at least 8');
+      await t.type('[name=new-password]', 'long enough now');
+      await t.submit();
+      expect(t.auth.setPassword).toHaveBeenCalledWith('long enough now');
+      expect(t.page().textContent).toContain('Password saved');
     });
   });
 
@@ -343,7 +359,29 @@ describe('organizer area', () => {
       const actions = [...t.page().querySelectorAll('.stack .actions button')].map((b) =>
         b.textContent?.trim(),
       );
-      expect(actions).toEqual(['Edit', 'Replace player', 'New code', 'Make co-admin']);
+      expect(actions).toEqual([
+        'Edit',
+        'Replace player',
+        'New code',
+        'Make co-admin',
+        'This is me',
+      ]);
+    });
+
+    it('"This is me" marks the player as the owner, and the row then says so', async () => {
+      const updateTrip = vi.fn(async () => ({ ...VERO, owner_player_id: 'p1' }));
+      const t = await boot('/admin/trips/vero/roster', 'organizer', { ...withRoster, updateTrip });
+      t.page().querySelector<HTMLElement>('[aria-label="More for Fritz"]')!.click();
+      await t.settle();
+      await t.click('This is me');
+      expect(updateTrip).toHaveBeenCalledWith('vero', { owner_player_id: 'p1' });
+      expect(t.page().querySelector('[aria-label=Players] .player')?.textContent).toContain(
+        'Owner',
+      );
+
+      t.page().querySelector<HTMLElement>('[aria-label="More for Fritz"]')!.click();
+      await t.settle();
+      expect(t.page().querySelector('.stack .actions')?.textContent).not.toContain('This is me');
     });
 
     it('adds a player, suggesting initials and tidying the phone number', async () => {
