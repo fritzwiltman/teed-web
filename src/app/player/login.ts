@@ -1,5 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { looksLikeCode, tidyCode } from '../core/code';
 import { formatCountdown } from '../core/format';
 import { RedeemOutcome, SessionService } from '../core/session';
@@ -8,7 +8,7 @@ import { InstallCard } from './install-card';
 /** Login: one field for the player or spectator code. */
 @Component({
   selector: 'app-login',
-  imports: [InstallCard],
+  imports: [InstallCard, RouterLink],
   template: `
     <main class="page">
       <header>
@@ -48,6 +48,8 @@ import { InstallCard } from './install-card';
       </form>
 
       <app-install-card />
+
+      <a class="organizer" routerLink="/admin">Organizer sign-in</a>
     </main>
   `,
   styles: `
@@ -103,6 +105,15 @@ import { InstallCard } from './install-card';
       color: var(--red);
       font-weight: 600;
       font-size: 0.95rem;
+    }
+    .organizer {
+      align-self: center;
+      display: inline-flex;
+      align-items: center;
+      min-height: var(--tap);
+      color: var(--muted);
+      font-size: 0.9rem;
+      text-underline-offset: 3px;
     }
     .button {
       margin-top: 0.4rem;

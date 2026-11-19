@@ -223,3 +223,144 @@ a {
   border-color: var(--frame);
   font-weight: 500;
 }
+
+// ── Forms and lists (organizer screens) ──────────────────────────────────────
+
+:root {
+  --amber: #8a5a00;
+  --amber-bg: #f6e3b4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --amber: #f2c46b;
+    --amber-bg: #3b2e12;
+  }
+}
+:root[data-theme='dark'] {
+  --amber: #f2c46b;
+  --amber-bg: #3b2e12;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0 0.7rem;
+  border: 1.5px solid var(--frame);
+  border-radius: var(--radius);
+  background: var(--field);
+  color: var(--ink);
+  font: 400 1rem var(--font-body); // 16px or more, so iOS doesn't zoom on focus
+}
+textarea.input {
+  padding: 0.6rem 0.7rem;
+  min-height: 6rem;
+  resize: vertical;
+}
+.input.mono {
+  font-family: var(--font-mono);
+}
+.input:disabled {
+  opacity: 0.6;
+}
+
+// A whole row you can tap.
+.card > a.row,
+.card > button.row {
+  width: 100%;
+  min-height: var(--tap);
+  align-items: center;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.card > .row.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.6rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  font: 500 0.68rem var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge.draft {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+.badge.live {
+  color: var(--on-pine);
+  background: var(--pine);
+  border-color: var(--pine);
+}
+.badge.final {
+  color: var(--muted);
+}
+
+.banner {
+  padding: 0.75rem 1rem;
+  border: 1.5px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--amber-bg);
+  color: var(--amber);
+  font-weight: 500;
+}
+
+.error-text {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--muted);
+  font: 500 0.72rem var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.button.small {
+  width: auto;
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  font-size: 0.95rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.link-button {
+  min-height: 2.75rem;
+  padding: 0 0.25rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 500 0.9rem var(--font-body);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}

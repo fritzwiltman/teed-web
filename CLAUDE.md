@@ -24,9 +24,10 @@ src/                      Angular app
   app/scoring/            pure TypeScript scoring engine, one module per format (no Angular imports)
   app/core/               supabase client, auth, offline queue, theme
 supabase/migrations/      SQL schema, RLS policies, functions (one file per change)
-supabase/functions/       edge functions: redeem-code, notify, itinerary-propose, course-import
+supabase/functions/       edge functions: redeem-code, notify, itinerary-propose
 supabase/seed/            Southern Pines 2026 test trip, course library seed list
 supabase/tests/           pgTAP tests (RLS, seed, code login) and edge function tests; CI runs them on every PR
+scripts/                  local DB test runner, one-off course library import (OpenGolfAPI)
 docs/                     notes; wireframes live at the link above
 ```
 
