@@ -1,7 +1,8 @@
 # Teed — Build Plan
 
-Markdown copy of the build plan (source: https://claude.ai/artifact/EjFNgELk12pGAnNS5CpSZu), exported Nov 18, 2026.
-The claude.ai doc is the master; refresh this copy when decisions change. Wireframes: https://claude.ai/artifact/CAMT8mmSpgajXZkR5YPbBL
+Markdown copy of the build plan (source: https://claude.ai/artifact/EjFNgELk12pGAnNS5CpSZu), exported Nov 18, 2026, then
+updated in the repo for the M1 schema and M2 login as built. The claude.ai doc is the master: sync it from the
+Schema and Login sections here. Wireframes: https://claude.ai/artifact/CAMT8mmSpgajXZkR5YPbBL
 
 Current setup: repo `fritzwiltman/teed-web`, Cloudflare Worker `teed` at https://teed.fgwilt1.workers.dev,
 Supabase project `https://mhfuxacwpzzthethgfcp.supabase.co`.
@@ -29,7 +30,7 @@ Principles:
 
 ## Screens (from the wireframes)
 
-1. **Login:** one field for the player or spectator code (e.g. `VERO-FW27-K4`), big "Join trip" button. "Add to Home
+1. **Login:** one field for the player or spectator code (e.g. `VERO-FW27-K4M9`), big "Join trip" button. "Add to Home
    Screen" hint on first visit with browser-specific steps (iPhone Safari/Chrome: Share → Add to Home Screen, with a
    short looping GIF; Android Chrome: one-tap Install). Hidden once launched from the home screen.
 2. **Trip home:** course photo, today's round (time, format, tees, course, group), big "Continue scoring · Hole N",
@@ -66,32 +67,47 @@ Free tier: 500 MB database, 2 active projects, projects pause after 1 week of in
 created (US East), Data API on, RLS on new tables automatically, anonymous sign-ins on, email on (admin magic link),
 `ping()` function, keep-alive GitHub Action (every 3 days) verified.
 
-**Schema**
+**Schema** (as built in `supabase/migrations`; helper functions and rate-limit tables live in a `private` schema
+the Data API doesn't expose)
 
 | Table | Key columns |
 | --- | --- |
-| `trips` | owner, name, slug (`VERO`), dates, status (draft/live/final), theme, house rules (allowance, low man, pick-up, spectator money, handicap lock date) |
-| `players` | trip, name, initials, code, auth user id, GHIN number, handicap index, index entered/locked at, role (player/co-admin) |
-| `courses` | name, location, architect, year, description, links, photo, source + ratings_checked_at |
-| `tees` | course, name, yards, rating, slope, par and stroke index per hole |
-| `rounds` | trip, course, tees, date, tee time, status, pairings TBD flag |
-| `round_formats` | round, format key, settings (allowance, presses, carryover, pot %) |
-| `groups` / `group_players` | round, tee time; players with team (A/B) |
-| `scores` | round, player, hole, strokes, entered_by, updated_at; unique on round + player + hole; history kept |
-| `itinerary_items` | trip, day, time, type (lodging, meal, activity, TV, travel, cost), fields per type |
-| `tasks` / `task_status` | trip checklist and per-player status |
+| `app_admins` | user id. Who may create trips and edit the course library (email sign-up is open, so it's an explicit list) |
+| `trips` | owner, name, slug (`VERO`), dates, status (draft/live/final), theme, house rules (handicap allowance, strokes off low man, pick-up at net double, spectators see money, handicap lock date), banker |
+| `players` | trip, name, initials, role (player/co-admin), handicap index, index entered/locked at. No codes or GHIN numbers here: everyone on the trip can read this table |
+| `player_codes` | player, code, issued at. Trip admins only |
+| `player_ghin` | player, GHIN number. Players and admins, never spectators |
+| `spectator_codes` | trip, code, label, enabled. Trip admins only |
+| `trip_sessions` | auth user, trip, player **or** spectator code. Written only by `redeem-code`. One player can have several (Safari and the home-screen app are separate anonymous users) |
+| `courses` | name, short name, location, architect, year, description, links, photo, source + ratings_checked_at |
+| `tees` | course, name, yards, rating, slope; par, stroke index and yards per hole (arrays) |
+| `rounds` | trip, number, course, tee, date, tee time, status (scheduled/live/final), pairings TBD flag, drive note |
+| `round_formats` | round, format key, settings (stakes, presses, carryover, pot split, Sixes rotation) |
+| `groups` / `group_players` | round, number, tee time; player with position, team (A/B) and optional GHIN course/playing handicap overrides (GHIN applies the allowance to the unrounded course handicap, so computing it can be off by one) |
+| `scores` | round, player, hole, strokes, entered by (user and player), timestamps; primary key round + player + hole |
+| `score_history` | every insert, update and delete of a score, with the previous value |
+| `presses` | round format, group, bet (`front`/`back`/`overall`, `m1`–`m3`), after hole. Entered by players mid-round, like scores |
+| `itinerary_items` | trip, day, time, type (lodging, meal, activity, tv, travel, cost, note), title, details per type, optional player |
+| `tasks` / `task_status` | trip checklist (with a "players can tick this themselves" flag) and per-player status |
 | `itinerary_proposals` | trip, payload, source, status (pending/approved/rejected) |
-| `spectator_codes` | trip, code, enabled |
-| `push_subscriptions` | player or spectator, endpoint, keys |
+| `push_subscriptions` | auth user, trip, endpoint, keys |
 
 **Login and security**
 
-- Players and spectators: anonymous sign-in, then edge function `redeem-code` links the session to a player (or a
-  read-only spectator) on a **live** trip.
-- Owner (Fritz): email magic link; owns trips and the course library. Co-admins: any player, per trip.
-- RLS everywhere: players read only their trip and write scores only for their group; spectators read-only and
-  never see GHIN numbers or the checklist (money visibility is a per-trip toggle); only owner/co-admins write setup.
-- Codes: trip slug + initials + 2-digit year + 2 random characters (`VERO-FW27-K4`); regenerate any time.
+- Players and spectators: the phone signs in anonymously, then edge function `redeem-code` links that session to
+  a player (or a read-only spectator) on a **live** trip and returns the trip and player. The link is a
+  `trip_sessions` row; the app also caches it so it opens with no signal.
+- Codes: trip slug + initials + 2-digit year + 4 random characters (`VERO-FW27-K4M9`, no I/O/0/1); typed in any
+  case, with or without dashes. Regenerating or revoking a code signs out every phone that used it.
+- Rate limit on failed codes: 5 a minute per device, 30 a minute per IP (looser, since a group shares one Wi-Fi
+  address), then a 5-minute lockout.
+- Owner (Fritz): email magic link, listed in `app_admins`; owns trips and the course library. Co-admins: any
+  player, per trip.
+- RLS everywhere: players read only their trip (once it is live or final) and write scores and presses only for
+  their group while the trip is live and the round isn't final; spectators read-only and never see GHIN numbers,
+  codes or the checklist; only owner/co-admins write setup. Handicap check-in goes through `submit_handicap()`.
+- Spectators and money: `spectators_see_money` (off by default) hides itinerary cost lines. TODO: stakes in
+  `round_formats.settings` are still readable by spectators; hiding payouts fully needs a separate stakes table.
 
 **Roster:** admin adds players (no self sign-up); can edit names/handicaps any time; replacing a player revokes the
 old code, issues a new one, and keeps the slot's tee times, group and team.

@@ -1,1 +1,206 @@
-/* You can add global styles to this file, and also import other style files */
+// Theme A "Scorecard". Everything visual reads from these tokens; a theme changes tokens only,
+// never layout. Light and dark follow the phone unless <html data-theme="light|dark"> overrides.
+
+@font-face {
+  font-family: 'Bitter';
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/bitter.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Libre Franklin';
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/libre-franklin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-600.woff2') format('woff2');
+}
+
+@mixin light-tokens {
+  color-scheme: light;
+  --bg: #f1ebdc; // card stock
+  --surface: #f8f4e9;
+  --field: #fcfaf4;
+  --ink: #1c2b22;
+  --muted: #58645b;
+  --pine: #1f4d36;
+  --brand: #1f4d36; // wordmark, focus ring
+  --on-pine: #f1ebdc;
+  --frame: #1c2b22; // dark frames
+  --line: #d6cdb6; // light inner lines
+  --red: #b3392f; // under par, errors
+  --shadow: 0 6px 20px rgb(28 43 34 / 18%);
+}
+
+@mixin dark-tokens {
+  color-scheme: dark;
+  --bg: #141b16; // pine-black
+  --surface: #1b251e;
+  --field: #10160f;
+  --ink: #ece5d3; // cream
+  --muted: #a2a995;
+  --pine: #2b6548;
+  --brand: #ece5d3;
+  --on-pine: #ece5d3;
+  --frame: #46584b;
+  --line: #2a372e;
+  --red: #ee7a6d; // coral-red
+  --shadow: 0 6px 20px rgb(0 0 0 / 45%);
+}
+
+:root {
+  --font-heading: 'Bitter', Georgia, serif;
+  --font-body: 'Libre Franklin', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --radius: 10px;
+  --tap: 52px; // minimum height of anything you tap on the course
+  @include light-tokens;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    @include dark-tokens;
+  }
+}
+:root[data-theme='dark'] {
+  @include dark-tokens;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+
+// ── Shared pieces ────────────────────────────────────────────────────────────
+
+// A page inside the phone-width column.
+.page {
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: calc(1.25rem + env(safe-area-inset-top)) 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+// Scorecard frame: dark outer border, light lines between rows.
+.card {
+  background: var(--surface);
+  border: 2px solid var(--frame);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.card > .row {
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+.card > .row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.card > .row:last-child {
+  padding-bottom: 0;
+}
+
+// Small mono caps label, like the print on a scorecard.
+.label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 1.25rem;
+  border: 2px solid var(--pine);
+  border-radius: var(--radius);
+  background: var(--pine);
+  color: var(--on-pine);
+  font: 600 1.0625rem var(--font-body);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.button.quiet {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--frame);
+  font-weight: 500;
+}

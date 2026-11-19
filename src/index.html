@@ -4,9 +4,26 @@
     <meta charset="utf-8" />
     <title>Teed</title>
     <base href="/" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Live scoring for golf trips." />
+    <meta name="theme-color" content="#F1EBDC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#141B16" media="(prefers-color-scheme: dark)" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Teed" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png" />
     <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preload" href="fonts/bitter.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin />
+    <script>
+      // Apply a saved light/dark override before first paint (see core/theme.ts).
+      try {
+        var t = localStorage.getItem('teed.theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <app-root></app-root>

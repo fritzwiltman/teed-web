@@ -20,7 +20,7 @@ select results_eq(
 
 select results_eq(
   $$ select count(*) from public.player_codes c join public.players p on p.id = c.player_id join public.trips t on t.id = p.trip_id
-     where t.slug = 'PINES' and c.code ~ ('^PINES-' || p.initials || '26-[A-Z2-9]{2}$') $$,
+     where t.slug = 'PINES' and c.code ~ ('^PINES-' || p.initials || '26-[A-HJ-NP-Z2-9]{4}$') $$,
   'select 4::bigint', 'every player has a generated login code');
 
 select results_eq(

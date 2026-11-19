@@ -79,12 +79,9 @@ begin
      set banker_player_id = (select id from public.players where trip_id = v_trip and name = 'Fritz')
    where id = v_trip;
 
-  -- Random login codes: PINES-<initials>26-<2 characters>.
+  -- Random login codes: PINES-<initials>26-<4 characters>.
   insert into public.player_codes (player_id, code)
-  select p.id,
-         'PINES-' || p.initials || '26-'
-           || substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 1 + floor(random() * 32)::int, 1)
-           || substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 1 + floor(random() * 32)::int, 1)
+  select p.id, 'PINES-' || p.initials || '26-' || private.random_code_suffix()
   from public.players p
   where p.trip_id = v_trip;
 

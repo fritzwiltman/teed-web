@@ -25,3 +25,25 @@ jobs:
         run: supabase db start
       - name: Run pgTAP tests
         run: supabase test db
+
+  functions:
+    name: Edge function tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The full local stack: database, Auth, Data API and the edge runtime serving supabase/functions.
+      - name: Start Supabase
+        run: supabase start
+      - name: Export local URL and keys
+        run: |
+          supabase status -o env > "$RUNNER_TEMP/supabase.env"
+          cut -d= -f1 "$RUNNER_TEMP/supabase.env"
+          sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' "$RUNNER_TEMP/supabase.env" >> "$GITHUB_ENV"
+      - name: Run edge function tests
+        run: node --test supabase/tests/functions/
