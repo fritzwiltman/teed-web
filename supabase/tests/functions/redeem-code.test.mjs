@@ -1,7 +1,7 @@
 // End-to-end tests for the redeem-code edge function, over real HTTP against a local Supabase
 // stack (`supabase start`). No dependencies: Node's test runner and fetch.
 //
-//   API_URL=... ANON_KEY=... SERVICE_ROLE_KEY=... node --test supabase/tests/functions/
+//   API_URL=... ANON_KEY=... SERVICE_ROLE_KEY=... node --test supabase/tests/functions/redeem-code.test.mjs
 //
 // (`supabase status -o env` prints those values. CI does this in .github/workflows/db-tests.yml.)
 // Uses the seeded Southern Pines trip: sets it live, and puts it back to final at the end.

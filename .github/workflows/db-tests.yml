@@ -46,4 +46,4 @@ jobs:
           cut -d= -f1 "$RUNNER_TEMP/supabase.env"
           sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' "$RUNNER_TEMP/supabase.env" >> "$GITHUB_ENV"
       - name: Run edge function tests
-        run: node --test supabase/tests/functions/
+        run: node --test supabase/tests/functions/redeem-code.test.mjs
