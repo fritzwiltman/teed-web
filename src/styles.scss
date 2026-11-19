@@ -138,27 +138,46 @@ a {
   gap: 1rem;
 }
 
-// Scorecard frame: dark outer border, light lines between rows.
+// Scorecard frame: dark outer border; light ruled lines that run frame to frame.
+// Padding lives inside the cells (.row, .cell), never on the card itself.
 .card {
   background: var(--surface);
-  border: 2px solid var(--frame);
+  border: 1.5px solid var(--frame);
   border-radius: var(--radius);
+  overflow: hidden;
+}
+// A card that is one block of content rather than ruled rows.
+.card.pad {
   padding: 1rem;
 }
 .card > .row {
-  padding: 0.7rem 0;
+  padding: 0.75rem 1rem;
   border-top: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 1rem;
 }
-.card > .row:first-child {
+.card > :first-child {
   border-top: 0;
-  padding-top: 0;
 }
-.card > .row:last-child {
-  padding-bottom: 0;
+// A strip of equal cells with light vertical rules between them.
+.card > .strip {
+  display: flex;
+  border-top: 1px solid var(--line);
+}
+.strip > .cell {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.6rem 0.5rem;
+  border-left: 1px solid var(--line);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.strip > .cell:first-child {
+  border-left: 0;
 }
 
 // Small mono caps label, like the print on a scorecard.

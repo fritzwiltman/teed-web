@@ -16,7 +16,7 @@ import { InstallCard } from './install-card';
         <p class="label">Live scoring for golf trips</p>
       </header>
 
-      <form class="card" (submit)="join($event)" novalidate>
+      <form class="card pad" (submit)="join($event)" novalidate>
         <label class="label" for="code">Trip code</label>
         <input
           id="code"

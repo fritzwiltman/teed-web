@@ -10,7 +10,7 @@ import { SessionService } from '../core/session';
         <p class="label">Score</p>
         <h1>Scorecard</h1>
       </header>
-      <section class="card">
+      <section class="card pad">
         @if (session()?.role === 'spectator') {
           <p>Spectators can't enter scores. Follow along on the Board.</p>
         } @else {

@@ -9,7 +9,7 @@ import { Component } from '@angular/core';
         <p class="label">Board</p>
         <h1>Leaderboard</h1>
       </header>
-      <section class="card">
+      <section class="card pad">
         <p>Live round and trip standings will be here.</p>
       </section>
     </main>

@@ -11,7 +11,7 @@ import { InstallService } from '../core/install';
   template: `
     @switch (install.platform()) {
       @case ('ios-safari') {
-        <section class="card" aria-labelledby="install-title">
+        <section class="card pad" aria-labelledby="install-title">
           <p class="label">Works best installed</p>
           <h2 id="install-title">Add Teed to your Home Screen</h2>
           <ol>
@@ -27,7 +27,7 @@ import { InstallService } from '../core/install';
         </section>
       }
       @case ('ios-chrome') {
-        <section class="card" aria-labelledby="install-title">
+        <section class="card pad" aria-labelledby="install-title">
           <p class="label">Works best installed</p>
           <h2 id="install-title">Add Teed to your Home Screen</h2>
           <ol>
@@ -43,7 +43,7 @@ import { InstallService } from '../core/install';
         </section>
       }
       @case ('ios-other') {
-        <section class="card" aria-labelledby="install-title">
+        <section class="card pad" aria-labelledby="install-title">
           <p class="label">Works best installed</p>
           <h2 id="install-title">Add Teed to your Home Screen</h2>
           <p>
@@ -54,7 +54,7 @@ import { InstallService } from '../core/install';
         </section>
       }
       @case ('android') {
-        <section class="card" aria-labelledby="install-title">
+        <section class="card pad" aria-labelledby="install-title">
           <p class="label">Works best installed</p>
           <h2 id="install-title">Install Teed</h2>
           @if (install.canPrompt()) {

@@ -11,6 +11,7 @@ interface RoundRow {
   courses: { name: string } | null;
   tees: { name: string } | null;
   round_formats: { format_key: string }[];
+  groups: { group_players: { position: number; players: { id: string; name: string } | null }[] }[];
 }
 
 /**
@@ -45,29 +46,24 @@ interface RoundRow {
         @if (shown(); as r) {
           <section class="card" aria-label="Round">
             <div class="row">
-              <span class="label round-label">{{ r.label }}</span>
+              <span class="label nowrap">{{ r.label }}</span>
             </div>
+            @if (r.cells.length) {
+              <div class="strip">
+                @for (cell of r.cells; track cell.name) {
+                  <span class="cell label" [attr.aria-label]="cell.name">{{ cell.value }}</span>
+                }
+              </div>
+            }
             <div class="row">
               <strong class="course">{{ r.round.courses?.name }}</strong>
             </div>
-            @if (r.round.tee_time) {
+            @if (r.group) {
               <div class="row">
-                <span class="label">Tee time</span>
-                <span class="mono">{{ time(r.round.tee_time) }}</span>
+                <span>{{ r.group }}</span>
               </div>
             }
-            @if (r.round.tees; as tee) {
-              <div class="row">
-                <span class="label">Tees</span>
-                <span>{{ tee.name }}</span>
-              </div>
-            }
-            @if (formats(r.round); as f) {
-              <div class="row">
-                <span class="label">Format</span>
-                <span>{{ f }}</span>
-              </div>
-            }
+            <!-- M4: the "Continue scoring" button goes here. -->
           </section>
         }
       </main>
@@ -83,10 +79,13 @@ interface RoundRow {
       font-family: var(--font-heading);
       font-size: 1.25rem;
     }
-    .round-label {
+    .nowrap {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .cell {
+      color: var(--ink);
     }
   `,
 })
@@ -110,29 +109,39 @@ export class TripHome {
     return s.player.role === 'co_admin' ? 'Co-admin' : null;
   });
 
-  /** Today's round, else the next one, else the trip's final round. Label e.g. "Next · R3 · Fri, Oct 9". */
+  /**
+   * Today's round, else the next one, else the last one. Label "Round 4 · Mon, Oct 12", or
+   * "Round 2 · Today"; then the TIME | FORMAT | TEES cells (empty ones dropped) and my group.
+   */
   protected readonly shown = computed(() => {
     const rows = this.rounds();
     const today = localDate();
-    const todays = rows.find((r) => r.play_date === today);
-    if (todays) return { label: `Today · R${todays.round_number}`, round: todays };
-    const next = rows.find((r) => r.play_date > today);
-    if (next)
-      return { label: `Next · R${next.round_number} · ${formatDay(next.play_date)}`, round: next };
-    const last = rows.at(-1);
-    return last
-      ? { label: `Final round · R${last.round_number} · ${formatDay(last.play_date)}`, round: last }
-      : null;
-  });
+    const round = rows.find((r) => r.play_date >= today) ?? rows.at(-1);
+    if (!round) return null;
 
-  protected readonly time = formatTime;
+    const cells = [
+      { name: 'Time', value: formatTime(round.tee_time) },
+      {
+        name: 'Format',
+        value: round.round_formats.map((f) => formatName(f.format_key)).join(' + '),
+      },
+      { name: 'Tees', value: round.tees?.name ?? '' },
+    ].filter((cell) => cell.value);
+
+    const me = this.session()?.player?.id;
+    const mine = round.groups?.find((g) => g.group_players.some((gp) => gp.players?.id === me));
+    const group = [...(mine?.group_players ?? [])]
+      .sort((a, b) => a.position - b.position)
+      .map((gp) => gp.players?.name)
+      .filter(Boolean)
+      .join(' · ');
+
+    const when = round.play_date === today ? 'Today' : formatDay(round.play_date);
+    return { label: `Round ${round.round_number} · ${when}`, round, cells, group };
+  });
 
   constructor() {
     void this.load();
-  }
-
-  protected formats(round: RoundRow): string {
-    return round.round_formats.map((f) => formatName(f.format_key)).join(' + ');
   }
 
   private async load(): Promise<void> {
@@ -142,7 +151,7 @@ export class TripHome {
       const { data } = await this.supabase
         .from('rounds')
         .select(
-          'round_number, play_date, tee_time, status, courses(name), tees(name), round_formats(format_key)',
+          'round_number, play_date, tee_time, status, courses(name), tees(name), round_formats(format_key), groups(group_players(position, players(id, name)))',
         )
         .eq('trip_id', trip.id)
         .order('play_date')
