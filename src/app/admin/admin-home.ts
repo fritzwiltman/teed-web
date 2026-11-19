@@ -78,6 +78,7 @@ import { AdminData, AdminError, RoundSummary, Trip } from './data';
             </button>
           }
         }
+        <a class="player-view" routerLink="/">Player view</a>
       }
     </main>
   `,
@@ -85,6 +86,15 @@ import { AdminData, AdminError, RoundSummary, Trip } from './data';
     h1 {
       font-size: 2rem;
       margin-top: 0.3rem;
+    }
+    .player-view {
+      align-self: center;
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.75rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      text-underline-offset: 3px;
     }
     .confirm {
       display: flex;

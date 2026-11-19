@@ -1,6 +1,13 @@
-import { Component, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AdminData, AdminError, TripFields, TripStatus } from './data';
+
+/** 'YYYY-MM-DD' plus a number of days. */
+export function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 const BLANK: TripFields = {
   name: '',
@@ -51,7 +58,14 @@ const BLANK: TripFields = {
                 placeholder="VERO"
                 [value]="f().slug"
                 (input)="setSlug($event)"
+                aria-describedby="slug-hint"
               />
+              <span id="slug-hint" class="label hint">{{ exampleCode() }}</span>
+              @if (slugEndsWithDigits()) {
+                <span class="warn" role="status"
+                  >The year is added for you, so leave it off the prefix.</span
+                >
+              }
             </label>
             <label class="field">
               <span class="label">Location</span>
@@ -71,7 +85,7 @@ const BLANK: TripFields = {
                   name="start"
                   type="date"
                   [value]="f().start_date"
-                  (input)="set('start_date', text($event))"
+                  (change)="setStart($event, lastDay)"
                 />
               </label>
               <label class="field">
@@ -80,9 +94,10 @@ const BLANK: TripFields = {
                   class="input"
                   name="end"
                   type="date"
+                  #lastDay
                   [value]="f().end_date"
                   [min]="f().start_date"
-                  (input)="set('end_date', text($event))"
+                  (change)="setEnd($event)"
                 />
               </label>
             </div>
@@ -200,8 +215,17 @@ const BLANK: TripFields = {
     }
     .pair {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 0.6rem;
+    }
+    .hint {
+      text-transform: none;
+      letter-spacing: 0.03em;
+    }
+    .warn {
+      color: var(--amber);
+      font-size: 0.875rem;
+      font-weight: 500;
     }
     .row {
       align-items: center;
@@ -209,8 +233,7 @@ const BLANK: TripFields = {
     .row.off {
       color: var(--muted);
     }
-    input[type='checkbox'],
-    input[type='radio'] {
+    input[type='checkbox'] {
       width: 1.5rem;
       height: 1.5rem;
       accent-color: var(--pine);
@@ -225,7 +248,8 @@ const BLANK: TripFields = {
       text-align: right;
     }
     .date {
-      width: auto;
+      width: 10.5rem;
+      flex: none;
     }
   `,
 })
@@ -275,6 +299,43 @@ export class TripDetails {
       .replace(/[^A-Z0-9]/g, '')
       .slice(0, 12);
     this.set('slug', input.value);
+  }
+
+  /** What a player's code will look like with this prefix: the year comes from the trip's first day. */
+  protected readonly exampleCode = computed(() => {
+    const year = (this.f().start_date || String(new Date().getFullYear())).slice(2, 4);
+    return `Codes look like ${this.f().slug || 'VERO'}-FW${year}-K4M9`;
+  });
+  protected readonly slugEndsWithDigits = computed(() => /\d$/.test(this.f().slug));
+
+  /**
+   * Choosing the first day fills in the last day (three days later) when it is empty or now
+   * falls before the first day, and opens the last-day picker to confirm or change it.
+   */
+  protected setStart(event: Event, lastDay: HTMLInputElement): void {
+    const start = this.text(event);
+    this.set('start_date', start);
+    const end = this.f().end_date;
+    if (!start || (end && end >= start)) return;
+    this.set('end_date', addDays(start, 3));
+    if (!end) {
+      // After this change has rendered. Not every browser lets a page open a picker itself.
+      setTimeout(() => {
+        try {
+          lastDay.showPicker();
+        } catch {
+          lastDay.focus();
+        }
+      });
+    }
+  }
+
+  /** A last day before the first day is moved forward to the first day. */
+  protected setEnd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const start = this.f().start_date;
+    if (input.value && start && input.value < start) input.value = start;
+    this.set('end_date', input.value);
   }
 
   protected setPercent(event: Event): void {

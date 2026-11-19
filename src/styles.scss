@@ -364,3 +364,83 @@ textarea.input {
   text-underline-offset: 3px;
   cursor: pointer;
 }
+
+// ── Floating pill nav (player and organizer) ─────────────────────────────────
+// The only fully rounded things in Theme A.
+
+.with-nav {
+  // room for the nav, so the last thing on a page is never underneath it
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+.pill-nav {
+  position: fixed;
+  left: 50%;
+  bottom: calc(0.9rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  width: min(calc(100% - 1.5rem), 24rem);
+  background: var(--surface);
+  border: 1.5px solid var(--frame);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+.pill-nav a {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.9rem;
+  border-radius: 999px;
+  font: 500 0.8rem var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink);
+  touch-action: manipulation;
+}
+.pill-nav a.active {
+  background: var(--pine);
+  color: var(--on-pine);
+}
+
+// ── Radio buttons and date fields ────────────────────────────────────────────
+
+// Drawn by hand so an unselected or disabled option is plainly an empty ring.
+input[type='radio'] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin: 0;
+  border: 1.5px solid var(--frame);
+  border-radius: 50%;
+  background: transparent;
+}
+input[type='radio']:checked::before {
+  content: '';
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--pine);
+}
+input[type='radio']:disabled {
+  opacity: 0.35;
+}
+
+// iOS gives date inputs a width of their own; make them obey the layout like any other field.
+input[type='date'].input {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+}
+input[type='date'].input::-webkit-date-and-time-value {
+  text-align: left;
+}

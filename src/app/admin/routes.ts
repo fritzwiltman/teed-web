@@ -2,6 +2,7 @@ import { inject } from '@angular/core';
 import { CanActivateFn, Router, Routes } from '@angular/router';
 import { AdminAuth } from './auth';
 import { AdminHome } from './admin-home';
+import { AdminShell } from './admin-shell';
 import { CourseAdd } from './course-add';
 import { CourseEdit } from './course-edit';
 import { Courses } from './courses';
@@ -23,6 +24,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'sign-in', component: SignIn, title: 'Teed · Organizer sign-in' },
   {
     path: '',
+    component: AdminShell,
     canActivate: [organizerOnly],
     children: [
       { path: '', component: MyTrips, title: 'Teed · My trips' },

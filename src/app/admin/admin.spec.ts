@@ -101,10 +101,12 @@ async function boot(
     target.click();
     await settle();
   };
+  // Text fields report typing with 'input'; date fields report a chosen date with 'change'. Send both.
   const type = async (selector: string, value: string) => {
     const input = page().querySelector<HTMLInputElement>(selector)!;
     input.value = value;
     input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
     await settle();
   };
   const submit = async () => {
@@ -183,6 +185,53 @@ describe('organizer area', () => {
     });
   });
 
+  describe('pill nav', () => {
+    const tabs = (page: HTMLElement) =>
+      [...page.querySelectorAll('nav.pill-nav a')].map(
+        (a) => a.textContent?.trim() + (a.classList.contains('active') ? '*' : ''),
+      );
+
+    it('shows Trips and Courses when no trip is selected', async () => {
+      const { page } = await boot('/admin');
+      expect(tabs(page())).toEqual(['Trips*', 'Courses']);
+    });
+
+    it('adds Trip and Roster for the trip in hand', async () => {
+      const t = await boot('/admin/trips/vero');
+      expect(tabs(t.page())).toEqual(['Trips', 'Trip*', 'Roster', 'Courses']);
+      await t.click('Roster');
+      expect(t.router.url).toBe('/admin/trips/vero/roster');
+      expect(tabs(t.page())).toEqual(['Trips', 'Trip', 'Roster*', 'Courses']);
+    });
+
+    it("keeps Trip lit on that trip's other screens", async () => {
+      const { page } = await boot('/admin/trips/vero/details');
+      expect(tabs(page())).toEqual(['Trips', 'Trip*', 'Roster', 'Courses']);
+    });
+
+    it('keeps the trip selected in the course library, and drops it back on My trips', async () => {
+      const t = await boot('/admin/trips/vero');
+      await t.click('Courses');
+      expect(tabs(t.page())).toEqual(['Trips', 'Trip', 'Roster', 'Courses*']);
+      await t.click('Trips');
+      expect(tabs(t.page())).toEqual(['Trips*', 'Courses']);
+    });
+
+    it('is not on the sign-in screen', async () => {
+      const { page } = await boot('/admin/sign-in', 'nobody');
+      expect(page().querySelector('nav')).toBeNull();
+    });
+  });
+
+  describe('Admin home links', () => {
+    it('has a Player view link back to the player app', async () => {
+      const { page } = await boot('/admin/trips/vero');
+      expect(page().querySelector<HTMLAnchorElement>('a.player-view')?.getAttribute('href')).toBe(
+        '/',
+      );
+    });
+  });
+
   describe('My trips', () => {
     it('lists upcoming trips with their status, and past trips as final', async () => {
       const { page } = await boot('/admin');
@@ -235,10 +284,10 @@ describe('organizer area', () => {
       const t = await boot('/admin/trips/new');
       await t.type('[name=name]', 'Vero Beach 2027');
       await t.type('[name=slug]', 'VERO');
-      await t.type('[name=start]', '2027-01-15');
-      await t.type('[name=end]', '2027-01-11');
       await t.submit();
-      expect(t.page().querySelector('[role=alert]')?.textContent).toContain('before the first day');
+      expect(t.page().querySelector('[role=alert]')?.textContent).toContain(
+        'Set the first and last day',
+      );
       expect(t.api.createTrip).not.toHaveBeenCalled();
     });
 
@@ -256,6 +305,46 @@ describe('organizer area', () => {
       expect(t.page().querySelector('[role=alert]')?.textContent).toContain(
         'The code prefix VERO is already in use',
       );
+    });
+
+    it('fills in the last day three days after the first, and opens its picker', async () => {
+      const t = await boot('/admin/trips/new');
+      const end = t.page().querySelector<HTMLInputElement>('[name=end]')!;
+      end.showPicker = vi.fn();
+      await t.type('[name=start]', '2027-01-11');
+      expect(end.value).toBe('2027-01-14');
+      await new Promise((r) => setTimeout(r));
+      expect(end.showPicker).toHaveBeenCalled();
+    });
+
+    it('moves the last day forward when the first day passes it, and never lets it sit before the first', async () => {
+      const t = await boot('/admin/trips/new');
+      const end = t.page().querySelector<HTMLInputElement>('[name=end]')!;
+      end.showPicker = vi.fn();
+      await t.type('[name=start]', '2027-01-11');
+      await t.type('[name=end]', '2027-01-15');
+      await t.type('[name=start]', '2027-01-13'); // still before the last day: left alone
+      expect(end.value).toBe('2027-01-15');
+      await t.type('[name=start]', '2027-01-20'); // past it: moved forward
+      expect(end.value).toBe('2027-01-23');
+      await t.type('[name=end]', '2027-01-18'); // before the first day: pulled up to it
+      expect(end.value).toBe('2027-01-20');
+    });
+
+    it('shows a live example code under the prefix, with the year from the first day', async () => {
+      const t = await boot('/admin/trips/new');
+      const hint = () => t.page().querySelector('#slug-hint')?.textContent?.trim();
+      await t.type('[name=start]', '2027-01-11');
+      expect(hint()).toBe('Codes look like VERO-FW27-K4M9');
+      await t.type('[name=slug]', 'pines');
+      expect(hint()).toBe('Codes look like PINES-FW27-K4M9');
+      expect(t.page().querySelector('.warn')).toBeNull();
+    });
+
+    it('warns when the prefix ends with digits', async () => {
+      const t = await boot('/admin/trips/new');
+      await t.type('[name=slug]', 'vero27');
+      expect(t.page().querySelector('.warn')?.textContent).toContain('The year is added for you');
     });
 
     it('offers only the Scorecard theme for now', async () => {
