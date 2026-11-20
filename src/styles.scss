@@ -1,84 +1,37 @@
-// Theme A "Scorecard". Everything visual reads from these tokens; a theme changes tokens only,
-// never layout. Light and dark follow the phone unless <html data-theme="light|dark"> overrides.
+// Global styles: tokens, fonts, the reset, type, and page layout. Cards, buttons, rows and every
+// other piece of UI are components in app/core/ui; screens compose those and never restyle them.
+
+@use './styles/tokens';
 
 @font-face {
-  font-family: 'Bitter';
-  font-weight: 400 800;
-  font-display: swap;
-  src: url('/fonts/bitter.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Libre Franklin';
-  font-weight: 400 700;
-  font-display: swap;
-  src: url('/fonts/libre-franklin.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
+  font-family: 'Barlow';
   font-weight: 500;
   font-display: swap;
-  src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2');
+  src: url('/fonts/barlow-500.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'IBM Plex Mono';
+  font-family: 'Barlow';
   font-weight: 600;
   font-display: swap;
-  src: url('/fonts/ibm-plex-mono-600.woff2') format('woff2');
+  src: url('/fonts/barlow-600.woff2') format('woff2');
 }
-
-@mixin light-tokens {
-  color-scheme: light;
-  --bg: #f1ebdc; // card stock
-  --surface: #f8f4e9;
-  --field: #fcfaf4;
-  --ink: #1c2b22;
-  --muted: #58645b;
-  --pine: #1f4d36;
-  --brand: #1f4d36; // wordmark, focus ring
-  --on-pine: #f1ebdc;
-  --frame: #1c2b22; // dark frames
-  --line: #d6cdb6; // light inner lines
-  --red: #b3392f; // under par, errors
-  --shadow: 0 6px 20px rgb(28 43 34 / 18%);
+@font-face {
+  font-family: 'Barlow';
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/barlow-700.woff2') format('woff2');
 }
-
-@mixin dark-tokens {
-  color-scheme: dark;
-  --bg: #141b16; // pine-black
-  --surface: #1b251e;
-  --field: #10160f;
-  --ink: #ece5d3; // cream
-  --muted: #a2a995;
-  --pine: #2b6548;
-  --brand: #ece5d3;
-  --on-pine: #ece5d3;
-  --frame: #46584b;
-  --line: #2a372e;
-  --red: #ee7a6d; // coral-red
-  --shadow: 0 6px 20px rgb(0 0 0 / 45%);
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/barlow-semi-condensed-600.woff2') format('woff2');
 }
-
-:root {
-  --font-heading: 'Bitter', Georgia, serif;
-  --font-body: 'Libre Franklin', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --radius: 2px; // nearly square, like a printed scorecard; only the floating nav is rounded
-  --tap: 52px; // minimum height of anything you tap on the course
-  @include light-tokens;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    @include dark-tokens;
-  }
-}
-:root[data-theme='dark'] {
-  @include dark-tokens;
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/barlow-semi-condensed-700.woff2') format('woff2');
 }
 
 *,
@@ -96,9 +49,8 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-body);
-  font-size: 1rem;
-  line-height: 1.45;
+  font: 600 17px/1.35 var(--font-body);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
@@ -106,10 +58,16 @@ body {
 h1,
 h2,
 h3 {
+  margin: 0;
   font-family: var(--font-heading);
   font-weight: 700;
   line-height: 1.15;
-  margin: 0;
+}
+h2 {
+  font-size: 20px;
+}
+h3 {
+  font-size: 18px;
 }
 
 p {
@@ -117,330 +75,93 @@ p {
 }
 
 a {
-  color: inherit;
+  color: var(--accent);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  font-variant-numeric: inherit;
 }
 
 :focus-visible {
-  outline: 3px solid var(--brand);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
-// ── Shared pieces ────────────────────────────────────────────────────────────
+// ── Page layout ──────────────────────────────────────────────────────────────
 
-// A page inside the phone-width column.
-.page {
+// A screen: the header band, then .content. Add .with-tabs when a tab bar is docked below.
+.screen {
+  min-height: 100dvh;
+}
+.screen.with-tabs {
+  padding-bottom: calc(var(--tab-bar) + env(safe-area-inset-bottom));
+}
+// The phone-width column under the header band.
+.content {
   width: 100%;
-  max-width: 30rem;
+  max-width: var(--column);
   margin: 0 auto;
-  padding: calc(1.25rem + env(safe-area-inset-top)) 1rem 1.5rem;
+  padding: var(--s4) var(--s4) var(--s6);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--gap-cards);
 }
 
-// Scorecard frame: dark outer border; light ruled lines that run frame to frame.
-// Padding lives inside the cells (.row, .cell), never on the card itself.
-.card {
-  background: var(--surface);
-  border: 1.5px solid var(--frame);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-// A card that is one block of content rather than ruled rows.
-.card.pad {
-  padding: 1rem;
-}
-.card > .row {
-  padding: 0.75rem 1rem;
-  border-top: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
-}
-.card > :first-child {
-  border-top: 0;
-}
-// A strip of equal cells with light vertical rules between them.
-.card > .strip {
-  display: flex;
-  border-top: 1px solid var(--line);
-}
-.strip > .cell {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 0.6rem 0.5rem;
-  border-left: 1px solid var(--line);
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.strip > .cell:first-child {
-  border-left: 0;
-}
-
-// Small mono caps label, like the print on a scorecard.
-.label {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.mono {
-  font-family: var(--font-mono);
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: var(--tap);
-  padding: 0 1.25rem;
-  border: 2px solid var(--pine);
-  border-radius: var(--radius);
-  background: var(--pine);
-  color: var(--on-pine);
-  font: 600 1.0625rem var(--font-body);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.button.quiet {
-  background: transparent;
-  color: var(--ink);
-  border-color: var(--frame);
-  font-weight: 500;
-}
-
-// ── Forms and lists (organizer screens) ──────────────────────────────────────
-
-:root {
-  --amber: #8a5a00;
-  --amber-bg: #f6e3b4;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --amber: #f2c46b;
-    --amber-bg: #3b2e12;
-  }
-}
-:root[data-theme='dark'] {
-  --amber: #f2c46b;
-  --amber-bg: #3b2e12;
-}
-
-.field {
+// Layout helpers. These arrange components; they never restyle one.
+.stack {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  min-width: 0;
+  gap: var(--s3);
 }
-.input {
-  width: 100%;
-  min-height: 3rem;
-  padding: 0 0.7rem;
-  border: 1.5px solid var(--frame);
-  border-radius: var(--radius);
-  background: var(--field);
-  color: var(--ink);
-  font: 400 1rem var(--font-body); // 16px or more, so iOS doesn't zoom on focus
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s3);
 }
-textarea.input {
-  padding: 0.6rem 0.7rem;
-  min-height: 6rem;
-  resize: vertical;
+.pair.wide {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
 }
-.input.mono {
-  font-family: var(--font-mono);
-}
-.input:disabled {
-  opacity: 0.6;
-}
-
-// A whole row you can tap.
-.card > a.row,
-.card > button.row {
-  width: 100%;
-  min-height: var(--tap);
-  align-items: center;
-  border-left: 0;
-  border-right: 0;
-  border-bottom: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-.card > .row.stack {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.6rem;
-}
-
-.badge {
-  display: inline-block;
-  padding: 0.15rem 0.45rem;
-  border: 1px solid currentColor;
-  border-radius: var(--radius);
-  font: 500 0.68rem var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.badge.draft {
-  color: var(--amber);
-  background: var(--amber-bg);
-}
-.badge.live {
-  color: var(--on-pine);
-  background: var(--pine);
-  border-color: var(--pine);
-}
-.badge.final {
-  color: var(--muted);
-}
-
-.banner {
-  padding: 0.75rem 1rem;
-  border: 1.5px solid var(--amber);
-  border-radius: var(--radius);
-  background: var(--amber-bg);
-  color: var(--amber);
-  font-weight: 500;
-}
-
-.error-text {
-  color: var(--red);
-  font-weight: 600;
-}
-
-.back {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  color: var(--muted);
-  font: 500 0.72rem var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  text-decoration: none;
-}
-
-.button.small {
-  width: auto;
-  min-height: 2.75rem;
-  padding: 0 0.9rem;
-  font-size: 0.95rem;
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.link-button {
-  min-height: 2.75rem;
-  padding: 0 0.25rem;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font: 500 0.9rem var(--font-body);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-// ── Floating pill nav (player and organizer) ─────────────────────────────────
-// The only fully rounded things in Theme A.
-
-.with-nav {
-  // room for the nav, so the last thing on a page is never underneath it
-  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
-}
-.pill-nav {
-  position: fixed;
-  left: 50%;
-  bottom: calc(0.9rem + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.3rem;
-  width: min(calc(100% - 1.5rem), 24rem);
-  background: var(--surface);
-  border: 1.5px solid var(--frame);
-  border-radius: 999px;
-  box-shadow: var(--shadow);
-}
-.pill-nav a {
-  flex: 1;
-  display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 2.9rem;
-  border-radius: 999px;
-  font: 500 0.8rem var(--font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--ink);
-  touch-action: manipulation;
+  gap: var(--s2);
 }
-.pill-nav a.active {
-  background: var(--pine);
-  color: var(--on-pine);
+.center {
+  align-self: center;
+  text-align: center;
 }
 
-// ── Radio buttons and date fields ────────────────────────────────────────────
-
-// Drawn by hand so an unselected or disabled option is plainly an empty ring.
-input[type='radio'] {
-  appearance: none;
-  -webkit-appearance: none;
-  flex: none;
-  display: grid;
-  place-content: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  margin: 0;
-  border: 1.5px solid var(--frame);
-  border-radius: 50%;
-  background: transparent;
+// Text styles from the type scale.
+.detail {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
 }
-input[type='radio']:checked::before {
-  content: '';
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 50%;
-  background: var(--pine);
+.error-text {
+  color: var(--red);
+  font-size: 15px;
 }
-input[type='radio']:disabled {
-  opacity: 0.35;
+.warn-text {
+  color: var(--warn-text);
+  font-size: 14px;
 }
 
-// iOS gives date inputs a width of their own; make them obey the layout like any other field.
-input[type='date'].input {
-  appearance: none;
-  -webkit-appearance: none;
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  text-align: left;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-input[type='date'].input::-webkit-date-and-time-value {
-  text-align: left;
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
