@@ -330,11 +330,12 @@ describe('organizer area', () => {
       const past = page().querySelector('[aria-label=Past]')!;
       expect(upcoming.textContent).toContain('Vero Beach 2027');
       expect([...upcoming.querySelectorAll('ui-badge')].map((b) => b.textContent?.trim())).toEqual([
-        'draft',
-        'live',
+        'Draft',
+        // Published, and Vero starts on Jan 11, 2027.
+        new Date() < new Date(2027, 0, 11) ? 'Upcoming' : 'In progress',
       ]);
       expect(past.textContent).toContain('Southern Pines 2026');
-      expect(past.querySelector('ui-badge')?.textContent?.trim()).toBe('final');
+      expect(past.querySelector('ui-badge')?.textContent?.trim()).toBe('Final');
       expect(page().querySelector('a[ui-button]')?.textContent).toContain('New trip');
     });
 
@@ -491,29 +492,32 @@ describe('organizer area', () => {
       const card = page().querySelector('[aria-label=Trip]')!;
       expect(card.textContent).toContain('Vero Beach 2027');
       expect(card.textContent).toContain('Vero Beach, FL · Jan 11–15, 2027');
-      expect(card.querySelector('ui-badge')?.textContent?.trim()).toBe('draft');
+      expect(card.querySelector('ui-badge')?.textContent?.trim()).toBe('Draft');
       expect(card.querySelector('a')?.getAttribute('href')).toBe('/admin/trips/vero/details');
     });
 
-    it('goes live only after a confirm step, then separately offers to text everyone their link', async () => {
+    it('publishes only after a confirm step, then separately offers to text everyone their link', async () => {
       const t = await boot('/admin/trips/vero');
-      await t.click('Go live');
+      await t.click('Publish');
       expect(t.api.updateTrip).not.toHaveBeenCalled();
       expect(t.page().querySelector('[role=dialog]')?.textContent).toContain(
-        'Set Vero Beach 2027 live?',
+        'Publish Vero Beach 2027?',
       );
-      // The sheet's own button (the first "Go live" is the one that opened it).
+      // The sheet's own button (the first "Publish" is the one that opened it).
       t.page().querySelector<HTMLElement>('[role=dialog] button[ui-button]')!.click();
       await t.settle();
       expect(t.api.updateTrip).toHaveBeenCalledWith('vero', { status: 'live' });
       expect(t.router.url).toBe('/admin/trips/vero'); // not sent anywhere yet
-      await t.click('Text everyone their link');
+      const sheet = t.page().querySelector('[role=dialog]')!;
+      expect(sheet.querySelector('h2')?.textContent).toBe('Vero Beach 2027 is published');
+      expect(sheet.textContent).toContain('Text everyone their link now?');
+      await t.click('Text links');
       expect(t.router.url).toBe('/admin/trips/vero/roster?send=all');
     });
 
-    it('can go live without texting anyone', async () => {
+    it('can publish without texting anyone', async () => {
       const t = await boot('/admin/trips/vero');
-      await t.click('Go live');
+      await t.click('Publish');
       t.page().querySelector<HTMLElement>('[role=dialog] button[ui-button]')!.click();
       await t.settle();
       await t.click('Not now');
@@ -521,10 +525,10 @@ describe('organizer area', () => {
       expect(t.router.url).toBe('/admin/trips/vero');
     });
 
-    it('has no Go live for a trip that is live or finished', async () => {
-      expect((await boot('/admin/trips/pines')).buttons()).not.toContain('Go live');
+    it('has no Publish for a trip that is published or finished', async () => {
+      expect((await boot('/admin/trips/pines')).buttons()).not.toContain('Publish');
       TestBed.resetTestingModule();
-      expect((await boot('/admin/trips/live')).buttons()).not.toContain('Go live');
+      expect((await boot('/admin/trips/live')).buttons()).not.toContain('Publish');
     });
 
     it('gives the organizer the course library and their other trips, but not a co-admin', async () => {
@@ -535,12 +539,12 @@ describe('organizer area', () => {
       expect(cal.buttons()).toContain('Trip details');
       expect(cal.buttons()).not.toContain('Course library');
       expect(cal.buttons()).not.toContain('All trips');
-      expect(cal.buttons()).not.toContain('Go live');
+      expect(cal.buttons()).not.toContain('Publish');
     });
   });
 
   describe('Rounds', () => {
-    const round = (n: number, status: string, tbd: boolean) => ({
+    const round = (n: number, status: string, tbd: boolean, scored = false) => ({
       id: `r${n}`,
       round_number: n,
       play_date: '2027-01-12',
@@ -548,14 +552,15 @@ describe('organizer area', () => {
       status,
       pairings_tbd: tbd,
       courses: { name: `Course ${n}`, short_name: null },
+      scored,
     });
 
-    it('lists rounds with their day and status', async () => {
+    it('lists rounds with their day and status, Live only once a score is in', async () => {
       const { page } = await boot('/admin/trips/vero/rounds', 'organizer', {
         rounds: vi.fn(async () => [
           round(1, 'final', false),
-          round(2, 'live', false),
-          round(3, 'scheduled', false),
+          round(2, 'scheduled', false, true),
+          round(3, 'live', false),
           round(4, 'scheduled', true),
         ]),
       });
@@ -640,7 +645,7 @@ describe('organizer area', () => {
       const link = href.mock.calls[0][0] as string;
       expect(link.startsWith('sms:+17725550101?&body=')).toBe(true);
       expect(decodeURIComponent(link.split('body=')[1])).toBe(
-        'You’re in for Vero Beach 2027. Tap to open Teed: https://teed.fgwilt1.workers.dev/join/K4M9QT',
+        `You’re in for Vero Beach 2027. Tap to open Teed: ${original.origin}/join/K4M9QT`,
       );
     });
 
@@ -651,7 +656,7 @@ describe('organizer area', () => {
       t.page().querySelectorAll<HTMLElement>('[aria-label=Players] button[ui-button]')[2].click();
       await t.settle();
       expect(share).toHaveBeenCalledWith({
-        text: 'You’re in for Vero Beach 2027. Tap to open Teed: https://teed.fgwilt1.workers.dev/join/Q2X7RD',
+        text: `You’re in for Vero Beach 2027. Tap to open Teed: ${location.origin}/join/Q2X7RD`,
       });
     });
 

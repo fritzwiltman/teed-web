@@ -39,13 +39,32 @@ export class UiChip {
   readonly icon = input<IconName>();
 }
 
-export type TripStatusName = 'draft' | 'live' | 'final';
+export type TripStage = 'draft' | 'upcoming' | 'in-progress' | 'final';
 
-/** Draft / Live / Final. */
+const STAGE_TEXT: Record<TripStage, string> = {
+  draft: 'Draft',
+  upcoming: 'Upcoming',
+  'in-progress': 'In progress',
+  final: 'Final',
+};
+
+/**
+ * Where a trip stands: a published trip is Upcoming until its first day, then In progress until
+ * the organizer makes it final.
+ */
+export function tripStage(
+  trip: { status: 'draft' | 'live' | 'final'; start_date: string },
+  today: string,
+): TripStage {
+  if (trip.status !== 'live') return trip.status;
+  return today < trip.start_date ? 'upcoming' : 'in-progress';
+}
+
+/** Draft / Upcoming / In progress / Final. */
 @Component({
   selector: 'ui-badge',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[class]': 'status()' },
+  host: { '[class]': 'stage()' },
   template: `{{ text() }}`,
   styles: `
     :host {
@@ -64,7 +83,11 @@ export type TripStatusName = 'draft' | 'live' | 'final';
       background: var(--warn-bg);
       color: var(--warn-text);
     }
-    :host(.live) {
+    :host(.upcoming) {
+      background: var(--tab-on);
+      color: var(--accent);
+    }
+    :host(.in-progress) {
       background: var(--fill);
       color: var(--on-fill);
     }
@@ -75,6 +98,6 @@ export type TripStatusName = 'draft' | 'live' | 'final';
   `,
 })
 export class UiBadge {
-  readonly status = input.required<TripStatusName>();
-  protected readonly text = computed(() => this.status());
+  readonly stage = input.required<TripStage>();
+  protected readonly text = computed(() => STAGE_TEXT[this.stage()]);
 }

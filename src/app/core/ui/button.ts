@@ -8,7 +8,7 @@ import { ChangeDetectionStrategy, Component, booleanAttribute, input } from '@an
  *   text      a text link
  *   size="small" makes primary or outline 40 tall and only as wide as its label.
  *
- * `busy` shows a spinner beside the label, which stays ("Going live…"), and ignores taps.
+ * `busy` shows a spinner beside the label, which stays ("Publishing…"), and ignores taps.
  */
 @Component({
   selector: 'button[ui-button], a[ui-button], label[ui-button]',

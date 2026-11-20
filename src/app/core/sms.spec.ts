@@ -15,13 +15,11 @@ describe('texting a join link', () => {
     );
   });
 
-  it('always links to the production address, wherever the organizer has the app open', () => {
-    expect(location.origin).not.toBe('https://teed.fgwilt1.workers.dev');
-    expect(linkMessage('Vero Beach 2027', 'K4M9QT')).toContain(
-      'https://teed.fgwilt1.workers.dev/join/K4M9QT',
-    );
+  it('links to the site the organizer has open, so a preview texts preview links', () => {
+    expect(location.origin).toMatch(/^https?:/);
+    expect(linkMessage('Vero Beach 2027', 'K4M9QT')).toContain(`${location.origin}/join/K4M9QT`);
     expect(spectatorMessage('Vero Beach 2027', 'W7Q3DX')).toBe(
-      'Follow Vero Beach 2027 live. Tap to open Teed: https://teed.fgwilt1.workers.dev/join/W7Q3DX',
+      `Follow Vero Beach 2027. Tap to open Teed: ${location.origin}/join/W7Q3DX`,
     );
   });
 

@@ -279,7 +279,7 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
 })
 export class Roster {
   readonly id = input.required<string>();
-  /** ?send=all opens "Text everyone their link" (where Overview sends you after going live). */
+  /** ?send=all opens "Text everyone their link" (where Overview sends you after publishing). */
   readonly send = input<string>();
 
   private readonly data = inject(AdminData);

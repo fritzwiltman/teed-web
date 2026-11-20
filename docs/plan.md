@@ -79,7 +79,9 @@ The wireframes' Player, Organizer and Design system pages are the spec. Where th
   - Saving a tee time or itinerary change offers "Notify everyone?"
 - **Organizer mode:**
   - Its own docked tab bar: Overview · Rounds · People · Itinerary.
-  - "Go live", then a separate prompt to text everyone their link.
+  - "Publish", then a separate prompt to text everyone their link.
+  - Trip badges read Draft, Upcoming, In progress or Final (from the status and the dates). "Live" and the red dot
+    only ever mean a round in play: at least one score in, and not final.
 - **Trip tab:** Itinerary · Courses · Info (stay, buy-ins, house rules).
 
 ## Screens (from the wireframes)
@@ -159,10 +161,11 @@ the Data API doesn't expose)
   codes; typed or pasted in any case. Stored as `K4M-9QT` (the code columns require a dash); the dash is not
   part of the code and is never shown or needed. Codes issued before M3.5 (`PINES-FW26-K4M9`) keep working. Regenerating or
   revoking a code signs out every phone that used it.
-- Join link: the organizer texts each player `https://teed.fgwilt1.workers.dev/join/<code>` (always the
-  production address). Opening it logs the phone in and goes to the skippable "Add to Home Screen" step. Either
-  button there copies the code, so the Home Screen app (separate storage) logs in with "Paste my code"; six boxes
-  take it by hand. There is no other login form for players.
+- Join link: the organizer texts each player `<site>/join/<code>`, built from the site the organizer has open (so
+  a preview texts preview links). Opening it logs the phone in and goes to the skippable "Add to Home Screen"
+  step: three steps, the code in large type and "Not now", which copies the code so the Home Screen app (separate
+  storage) logs in with "Paste my code"; six boxes take it by hand. Android also gets "Install Teed" (the system
+  install prompt). There is no other login form for players.
 - Rate limit on failed codes: 5 a minute per device, 30 a minute per IP (looser, since a group shares one Wi-Fi
   address), then a 5-minute lockout.
 - Owner (Fritz): email sign-in, listed in `app_admins`. Owner-only: creating and deleting trips, the course

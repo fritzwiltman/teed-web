@@ -5,6 +5,7 @@ import {
   BoardRow,
   Choice,
   Tab,
+  UiBadge,
   UiBoard,
   UiButton,
   UiCheckbox,
@@ -16,6 +17,7 @@ import {
   UiStepperRow,
   UiSwitch,
   UiTabBar,
+  tripStage,
 } from './index';
 
 async function render<T>(host: new () => T) {
@@ -30,7 +32,7 @@ describe('ui-button', () => {
     imports: [UiButton],
     template: `
       <button ui-button type="button" [busy]="busy()" (click)="taps.set(taps() + 1)">
-        {{ busy() ? 'Going live…' : 'Go live' }}
+        {{ busy() ? 'Publishing…' : 'Publish' }}
       </button>
       <a ui-button variant="outline" size="small" href="#">Small outline</a>
       <button ui-button variant="text" type="button">Text link</button>
@@ -55,14 +57,14 @@ describe('ui-button', () => {
     await fixture.whenStable();
     const button = el.querySelector('button')!;
     expect(button.querySelector('.spinner')).toBeTruthy();
-    expect(button.textContent?.trim()).toBe('Going live…');
+    expect(button.textContent?.trim()).toBe('Publishing…');
     expect(button.getAttribute('aria-busy')).toBe('true');
     expect(button.classList.contains('busy')).toBe(true);
 
     host.busy.set(false);
     await fixture.whenStable();
     expect(button.querySelector('.spinner')).toBeNull();
-    expect(button.textContent?.trim()).toBe('Go live');
+    expect(button.textContent?.trim()).toBe('Publish');
   });
 
   it('carries its variant and size as classes, on a link as well as a button', async () => {
@@ -353,7 +355,7 @@ describe('ui-paid-status', () => {
 describe('ui-sheet', () => {
   @Component({
     imports: [UiSheet],
-    template: `<ui-sheet [(open)]="open" label="Go live" [sticky]="sticky()"
+    template: `<ui-sheet [(open)]="open" label="Publish" [sticky]="sticky()"
       ><p>Sure?</p></ui-sheet
     >`,
   })
@@ -361,6 +363,25 @@ describe('ui-sheet', () => {
     open = signal(false);
     sticky = signal(false);
   }
+
+  async function opened(sticky = false) {
+    const t = await render(Host);
+    t.host.sticky.set(sticky);
+    t.host.open.set(true);
+    await t.fixture.whenStable();
+    const sheet = t.el.querySelector<HTMLElement>('[role=dialog]')!;
+    sheet.getBoundingClientRect = () => ({ height: 400 }) as DOMRect;
+    const touch = (type: string, y?: number) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: y === undefined ? [] : [{ clientY: y }] });
+      sheet.dispatchEvent(event);
+      return event;
+    };
+    return { ...t, sheet, touch };
+  }
+  const locked = () => document.documentElement.classList.contains('ui-sheet-open');
+
+  afterEach(() => vi.useRealTimers());
 
   it('is not there until opened, and closes when the dim is tapped', async () => {
     const { el, host, fixture } = await render(Host);
@@ -374,12 +395,130 @@ describe('ui-sheet', () => {
     expect(el.querySelector('[role=dialog]')).toBeNull();
   });
 
-  it('stays up when sticky', async () => {
-    const { el, host, fixture } = await render(Host);
-    host.sticky.set(true);
-    host.open.set(true);
+  it('closes on Escape', async () => {
+    const { host, fixture } = await opened();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     await fixture.whenStable();
-    el.querySelector<HTMLElement>('.dim')!.click();
+    expect(host.open()).toBe(false);
+  });
+
+  it('keeps the page behind still while it is open', async () => {
+    const { host, fixture, el } = await opened();
+    expect(locked()).toBe(true);
+    const move = new Event('touchmove', { cancelable: true });
+    el.querySelector('.dim')!.dispatchEvent(move);
+    expect(move.defaultPrevented).toBe(true);
+    host.open.set(false);
+    await fixture.whenStable();
+    expect(locked()).toBe(false);
+  });
+
+  it('unlocks the page if it is removed while open', async () => {
+    const { fixture } = await opened();
+    fixture.destroy();
+    expect(locked()).toBe(false);
+  });
+
+  it('follows the finger down and closes past about a third of its height', async () => {
+    const { host, fixture, sheet, touch } = await opened();
+    touch('touchstart', 300);
+    const move = touch('touchmove', 440);
+    await fixture.whenStable();
+    expect(move.defaultPrevented).toBe(true);
+    expect(sheet.style.transform).toBe('translateY(140px)');
+    touch('touchend');
+    await fixture.whenStable();
+    expect(host.open()).toBe(false);
+  });
+
+  it('springs back from a short, slow drag', async () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    const { host, fixture, sheet, touch } = await opened();
+    touch('touchstart', 300);
+    vi.advanceTimersByTime(400);
+    touch('touchmove', 360);
+    await fixture.whenStable();
+    expect(sheet.style.transform).toBe('translateY(60px)');
+    touch('touchend');
+    await fixture.whenStable();
     expect(host.open()).toBe(true);
+    expect(sheet.style.transform).toBe('');
+  });
+
+  it('closes on a short flick down', async () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    const { host, fixture, touch } = await opened();
+    touch('touchstart', 300);
+    vi.advanceTimersByTime(40);
+    touch('touchmove', 350);
+    touch('touchend');
+    await fixture.whenStable();
+    expect(host.open()).toBe(false);
+  });
+
+  it('does not move when pushed up, and stops the page scrolling instead', async () => {
+    const { host, fixture, sheet, touch } = await opened();
+    touch('touchstart', 300);
+    const move = touch('touchmove', 200);
+    await fixture.whenStable();
+    expect(move.defaultPrevented).toBe(true);
+    expect(sheet.style.transform).toBe('');
+    touch('touchend');
+    expect(host.open()).toBe(true);
+  });
+
+  it('lets its own content scroll before it drags', async () => {
+    const { host, sheet, touch } = await opened();
+    Object.defineProperties(sheet, {
+      scrollHeight: { value: 900 },
+      clientHeight: { value: 400 },
+      scrollTop: { value: 120 },
+    });
+    touch('touchstart', 300);
+    const move = touch('touchmove', 500);
+    expect(move.defaultPrevented).toBe(false);
+    touch('touchend');
+    expect(host.open()).toBe(true);
+  });
+
+  it('stays up when sticky: no dim tap, Escape or drag closes it', async () => {
+    const { el, host, fixture, touch } = await opened(true);
+    el.querySelector<HTMLElement>('.dim')!.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    touch('touchstart', 300);
+    touch('touchmove', 600);
+    touch('touchend');
+    await fixture.whenStable();
+    expect(host.open()).toBe(true);
+  });
+});
+
+describe('ui-badge', () => {
+  it('names where a trip stands from its status and first day', () => {
+    const trip = (status: 'draft' | 'live' | 'final') => ({ status, start_date: '2027-01-11' });
+    expect(tripStage(trip('draft'), '2027-01-12')).toBe('draft');
+    expect(tripStage(trip('live'), '2027-01-10')).toBe('upcoming');
+    expect(tripStage(trip('live'), '2027-01-11')).toBe('in-progress');
+    expect(tripStage(trip('live'), '2027-02-01')).toBe('in-progress');
+    expect(tripStage(trip('final'), '2027-01-12')).toBe('final');
+  });
+
+  it('reads Draft, Upcoming, In progress or Final, never Live', async () => {
+    @Component({
+      imports: [UiBadge],
+      template: `@for (s of stages; track s) {
+        <ui-badge [stage]="s" />
+      }`,
+    })
+    class Host {
+      stages = ['draft', 'upcoming', 'in-progress', 'final'] as const;
+    }
+    const { el } = await render(Host);
+    expect([...el.querySelectorAll('ui-badge')].map((b) => b.textContent?.trim())).toEqual([
+      'Draft',
+      'Upcoming',
+      'In progress',
+      'Final',
+    ]);
   });
 });

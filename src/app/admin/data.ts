@@ -3,6 +3,7 @@ import { PlayerInfo } from '../core/session';
 import { ADMIN_SUPABASE, SUPABASE } from '../core/supabase';
 import { AdminAuth } from './auth';
 import { CourseDraft, TeeDraft } from './opengolf';
+import { ScoredGroup, hasScores } from '../core/round';
 
 export type TripStatus = 'draft' | 'live' | 'final';
 
@@ -34,6 +35,8 @@ export interface RoundSummary {
   status: 'scheduled' | 'live' | 'final';
   pairings_tbd: boolean;
   courses: { name: string; short_name: string | null } | null;
+  /** In play: someone has a score in it and it isn't final. */
+  scored: boolean;
 }
 
 export interface RosterPlayer {
@@ -144,12 +147,17 @@ export class AdminData {
     const { data, error } = await this.db
       .from('rounds')
       .select(
-        'id, round_number, play_date, tee_time, status, pairings_tbd, courses(name, short_name)',
+        'id, round_number, play_date, tee_time, status, pairings_tbd, courses(name, short_name), groups(group_players(scores(count)))',
       )
       .eq('trip_id', tripId)
       .order('round_number');
     if (error) fail(error, "Couldn't load the rounds.");
-    return data as unknown as RoundSummary[];
+    return (data as unknown as (RoundSummary & { groups: ScoredGroup[] })[]).map(
+      ({ groups, ...round }) => ({
+        ...round,
+        scored: round.status !== 'final' && hasScores(groups),
+      }),
+    );
   }
 
   // ── Roster ─────────────────────────────────────────────────────────────────

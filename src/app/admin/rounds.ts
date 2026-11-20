@@ -60,7 +60,7 @@ export class Rounds {
 
   protected status(round: RoundSummary): string {
     if (round.status === 'final') return 'Final';
-    if (round.status === 'live') return 'Live';
+    if (round.scored) return 'Live';
     return round.pairings_tbd ? 'Pairings TBD' : 'Ready';
   }
 

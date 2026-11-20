@@ -214,8 +214,16 @@ export class UiCheckbox {
     ui-field input[aria-invalid='true'] {
       border-color: var(--red);
     }
-    /* iOS gives date inputs a size of their own; make them obey the layout like any other field. */
-    ui-field input[type='date']::-webkit-date-and-time-value {
+    /* iOS sizes and centres date and time inputs its own way; make them sit like a text field. */
+    ui-field input[type='date'],
+    ui-field input[type='time'],
+    ui-field input[type='datetime-local'] {
+      display: flex;
+      align-items: center;
+      height: 50px;
+    }
+    ui-field input::-webkit-date-and-time-value {
+      margin: 0;
       text-align: left;
     }
     ui-field.compact input {

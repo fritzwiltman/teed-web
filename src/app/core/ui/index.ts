@@ -3,7 +3,8 @@
 export { UiButton } from './button';
 export { UiCard, UiSectionHead } from './card';
 export { UiBadge, UiChip } from './chip';
-export type { TripStatusName } from './chip';
+export { tripStage } from './chip';
+export type { TripStage } from './chip';
 export { UiChoicePills, UiSegmented } from './choices';
 export type { Choice } from './choices';
 export { UiCheckbox, UiField, UiPaidStatus, UiSwitch } from './controls';

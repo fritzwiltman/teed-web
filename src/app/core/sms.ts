@@ -1,17 +1,12 @@
 // Texting a player their join link.
 
-import { environment } from '../../environments/environment';
-
-/**
- * The link that logs a phone straight in. Always the production address, never the page the
- * organizer happens to be on (a preview link would install the wrong app).
- */
-export function joinLink(code: string, url: string = environment.appUrl): string {
+/** The link that logs a phone straight in, on the site the organizer has open. */
+export function joinLink(code: string, url: string = location.origin): string {
   return `${url}/join/${encodeURIComponent(code.replace(/[^A-Za-z0-9]/g, '').toUpperCase())}`;
 }
 
 /** The text a player gets. */
-export function linkMessage(trip: string, code: string, url: string = environment.appUrl): string {
+export function linkMessage(trip: string, code: string, url: string = location.origin): string {
   return `You’re in for ${trip}. Tap to open Teed: ${joinLink(code, url)}`;
 }
 
@@ -19,9 +14,9 @@ export function linkMessage(trip: string, code: string, url: string = environmen
 export function spectatorMessage(
   trip: string,
   code: string,
-  url: string = environment.appUrl,
+  url: string = location.origin,
 ): string {
-  return `Follow ${trip} live. Tap to open Teed: ${joinLink(code, url)}`;
+  return `Follow ${trip}. Tap to open Teed: ${joinLink(code, url)}`;
 }
 
 /**

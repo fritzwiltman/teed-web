@@ -52,6 +52,9 @@ docs/                     notes; wireframes live at the link above
   tinted pill. Light and dark follow the phone's setting with a manual override. Themes change tokens only, never
   layout. Screens compose components from `app/core/ui`; never restyle a card or button inline.
 - **Only pertinent info on screen.** No labels that explain how the app works. No app-computed drive or leave times.
+- **"Live" means a round in play:** at least one score in and not final. Only then the red dot and "Live".
+  Trips are Draft, Upcoming, In progress or Final; the organizer "publishes" a trip.
+- **Sheets:** every bottom sheet is `ui-sheet` (drag to dismiss, background locked). No one-off drawers.
 - **Day headers** always read `Label · Ddd, Mon D` (`Round 3 · Sun, Oct 11`, `Travel day · Thu, Oct 8`).
 - **Screens render data, never a format.** Cards, leaderboards and breakdowns take rows that each format plug-in
   supplies. No screen hard-codes Sixes, Nassau or any other format.

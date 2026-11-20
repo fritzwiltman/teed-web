@@ -1,5 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
 import { Router } from '@angular/router';
+import { displayCode } from '../core/code';
 import { InstallPlatform, InstallService } from '../core/install';
 import { SessionService } from '../core/session';
 import { UiButton, UiCard } from '../core/ui';
@@ -27,17 +28,12 @@ const STEPS: Partial<Record<InstallPlatform, string[]>> = {
   ],
 };
 
-const BROWSER: Partial<Record<InstallPlatform, string>> = {
-  'ios-safari': 'Safari',
-  'ios-chrome': 'Chrome',
-  android: 'the browser',
-  'ios-other': 'the browser',
-};
-
 /**
  * The Add to Home Screen step, after a join link and from the reminder on trip home. Always
- * skippable. Either button copies the player's code, so the Home Screen app (which has its own
- * storage) can take it with "Paste my code": Safari only allows a copy from a tap.
+ * skippable. On an iPhone nothing can add the app for you, so there are only the steps, the
+ * player's code (the Home Screen app has its own storage and may ask for it) and "Not now", which
+ * copies the code on the way out: Safari only allows a copy from a tap. Android gets a real
+ * "Install Teed" button when the browser offers its install prompt.
  */
 @Component({
   selector: 'app-install-step',
@@ -61,17 +57,17 @@ const BROWSER: Partial<Record<InstallPlatform, string>> = {
         <p class="detail">Leader alerts only work from the Home Screen app.</p>
       </ui-card>
 
-      @if (install.canPrompt()) {
-        <button ui-button type="button" (click)="installNow()">Install Teed</button>
-        <button ui-button type="button" variant="outline" (click)="carryOn()">
-          Continue in {{ browser() }}
-        </button>
-      } @else {
-        <button ui-button type="button" (click)="carryOn()">Continue in {{ browser() }}</button>
+      @if (code(); as c) {
+        <div class="code">
+          <p class="detail">Your code</p>
+          <p class="chars">{{ c }}</p>
+        </div>
       }
-      <button ui-button type="button" variant="text" class="center" (click)="carryOn()">
-        Not now
-      </button>
+
+      @if (canInstall()) {
+        <button ui-button type="button" (click)="installNow()">Install Teed</button>
+      }
+      <button ui-button type="button" variant="outline" (click)="carryOn()">Not now</button>
     </main>
   `,
   styles: `
@@ -86,6 +82,15 @@ const BROWSER: Partial<Record<InstallPlatform, string>> = {
       aspect-ratio: 16 / 9;
       border-radius: var(--radius-card);
       background: var(--chip);
+    }
+    .code {
+      text-align: center;
+    }
+    .chars {
+      font: 700 44px/1.1 var(--font-heading);
+      letter-spacing: 6px;
+      user-select: all;
+      -webkit-user-select: all;
     }
     ol {
       list-style: none;
@@ -123,7 +128,11 @@ export class InstallStep {
     return s?.player?.name ?? s?.trip.name ?? '';
   });
   protected readonly steps = computed(() => STEPS[this.install.platform()] ?? []);
-  protected readonly browser = computed(() => BROWSER[this.install.platform()] ?? 'the browser');
+  protected readonly code = computed(() => displayCode(this.sessions.code() ?? ''));
+  /** Android only, once the browser has offered its own install prompt. */
+  protected readonly canInstall = computed(
+    () => this.install.platform() === 'android' && this.install.canPrompt(),
+  );
 
   constructor() {
     // Already on the Home Screen, or nowhere to install to: nothing to do here.

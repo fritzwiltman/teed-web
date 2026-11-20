@@ -135,7 +135,7 @@ const PHOTO =
       <h3>ui-button</h3>
       <div class="stack">
         <button ui-button type="button">Start scoring</button>
-        <button ui-button type="button" busy>Going live…</button>
+        <button ui-button type="button" busy>Publishing…</button>
         <button ui-button type="button" disabled>Disabled</button>
         <button ui-button type="button" variant="outline">Outline</button>
         <button ui-button type="button" variant="outline" busy>Saving…</button>
@@ -155,9 +155,10 @@ const PHOTO =
         <ui-chip class="warn">Needs stroke index</ui-chip>
       </div>
       <div class="actions">
-        <ui-badge status="draft" />
-        <ui-badge status="live" />
-        <ui-badge status="final" />
+        <ui-badge stage="draft" />
+        <ui-badge stage="upcoming" />
+        <ui-badge stage="in-progress" />
+        <ui-badge stage="final" />
       </div>
 
       <h3>ui-choice-pills</h3>
@@ -195,6 +196,10 @@ const PHOTO =
         <div class="pair">
           <ui-field label="First day"><input type="date" value="2027-01-11" /></ui-field>
           <ui-field label="Last day"><input type="date" value="2027-01-15" /></ui-field>
+        </div>
+        <div class="pair">
+          <ui-field label="Lock date"><input type="date" /></ui-field>
+          <ui-field label="Tee time"><input type="time" value="08:10" /></ui-field>
         </div>
         <ui-field label="Not valid"><input value="call me" aria-invalid="true" /></ui-field>
         <ui-field label="Disabled"><input value="Locked" disabled /></ui-field>
@@ -290,11 +295,20 @@ const PHOTO =
 
       <h3>ui-sheet</h3>
       <div class="frame sheet">
-        <ui-sheet [open]="true" label="Example" sticky>
-          <h2>Set Vero Beach 2027 live?</h2>
+        <div class="filler">
+          <button ui-button type="button" (click)="sheet.set(true)">Open the sheet</button>
+          <p>
+            Drag it down past a third, flick it, tap the dim or press Escape to close it. A shorter
+            drag springs back, and the page behind stays still.
+          </p>
+        </div>
+        <ui-sheet [(open)]="sheet" label="Publish">
+          <h2>Publish Vero Beach 2027?</h2>
           <p class="detail">Player links start working straight away.</p>
-          <button ui-button type="button">Go live</button>
-          <button ui-button type="button" variant="outline">Not yet</button>
+          <button ui-button type="button" (click)="sheet.set(false)">Publish</button>
+          <button ui-button type="button" variant="outline" (click)="sheet.set(false)">
+            Not yet
+          </button>
         </ui-sheet>
       </div>
 
@@ -373,7 +387,12 @@ const PHOTO =
       height: 150px;
     }
     .frame.sheet {
-      height: 340px;
+      height: 420px;
+    }
+    .frame.sheet .filler {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s3);
     }
     .grow {
       flex: 1;
@@ -404,6 +423,7 @@ export class UiGallery {
     { value: '18', label: '18 holes' },
     { value: '9', label: 'Front 9' },
   ];
+  protected readonly sheet = signal(false);
   protected readonly on = signal(true);
   protected readonly ticked = signal(true);
   protected readonly scoreA = signal(3);

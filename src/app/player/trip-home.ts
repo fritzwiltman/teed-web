@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { formatDateRange, formatDay, formatName, formatTime, localDate } from '../core/format';
 import { InstallService } from '../core/install';
+import { inPlay } from '../core/round';
 import { SessionService } from '../core/session';
 import { UiButton, UiCard, UiChip, UiCourseCard, UiListRow, UiSkeleton } from '../core/ui';
 import { PlayerHeader } from './player-header';
@@ -14,7 +15,13 @@ interface RoundRow {
   courses: { name: string; photo_path: string | null } | null;
   tees: { name: string } | null;
   round_formats: { format_key: string }[];
-  groups: { group_players: { position: number; players: { id: string; name: string } | null }[] }[];
+  groups: {
+    group_players: {
+      position: number;
+      players: { id: string; name: string } | null;
+      scores?: { count: number }[];
+    }[];
+  }[];
 }
 
 /**
@@ -44,7 +51,7 @@ interface RoundRow {
             [name]="r.round.courses?.name ?? ''"
             [label]="r.label"
             [photo]="r.photo"
-            [live]="r.round.status === 'live'"
+            [live]="r.live"
           >
             @for (chip of r.chips; track chip.name) {
               <ui-chip [icon]="chip.icon" [attr.aria-label]="chip.name">{{ chip.value }}</ui-chip>
@@ -54,7 +61,7 @@ interface RoundRow {
             }
             @if (s.player && r.round.status !== 'final') {
               <a ui-button routerLink="/score">{{
-                r.round.status === 'live' ? 'Continue scoring' : 'Start scoring'
+                r.live ? 'Continue scoring' : 'Start scoring'
               }}</a>
             }
           </ui-course-card>
@@ -145,6 +152,7 @@ export class TripHome {
     return {
       label: `Round ${round.round_number} · ${formatDay(round.play_date)}`,
       round,
+      live: inPlay(round),
       chips,
       group,
       photo,
@@ -163,7 +171,7 @@ export class TripHome {
         .db()
         .from('rounds')
         .select(
-          'round_number, play_date, tee_time, status, courses(name, photo_path), tees(name), round_formats(format_key), groups(group_players(position, players(id, name)))',
+          'round_number, play_date, tee_time, status, courses(name, photo_path), tees(name), round_formats(format_key), groups(group_players(position, players(id, name), scores(count)))',
         )
         .eq('trip_id', trip.id)
         .order('play_date')

@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { formatDateRange } from '../core/format';
+import { formatDateRange, localDate } from '../core/format';
 import { SessionService } from '../core/session';
 import {
   UiBadge,
@@ -11,12 +11,13 @@ import {
   UiListRow,
   UiSectionHead,
   UiSkeleton,
+  tripStage,
 } from '../core/ui';
 import { AdminAuth } from './auth';
 import { AdminData, AdminError, Trip } from './data';
 import { enterPlayerMode } from './organizer-header';
 
-/** The organizer's trips: upcoming (draft or live) and past (final). No tab bar here. */
+/** The organizer's trips: upcoming (draft or published) and past (final). No tab bar here. */
 @Component({
   selector: 'app-my-trips',
   imports: [
@@ -54,7 +55,7 @@ import { enterPlayerMode } from './organizer-header';
               chevron
               (click)="open(trip)"
             >
-              <ui-badge [status]="trip.status" />
+              <ui-badge [stage]="stage(trip)" />
             </button>
           }
         </ui-card>
@@ -72,7 +73,7 @@ import { enterPlayerMode } from './organizer-header';
               chevron
               (click)="open(trip)"
             >
-              <ui-badge status="final" />
+              <ui-badge stage="final" />
             </button>
           }
         </ui-card>
@@ -193,6 +194,10 @@ export class MyTrips {
     } else {
       this.passwordError.set("That password wasn't accepted. Try a longer one.");
     }
+  }
+
+  protected stage(trip: Trip) {
+    return tripStage(trip, localDate());
   }
 
   protected dates(trip: Trip): string {

@@ -3,6 +3,4 @@
 export const environment = {
   supabaseUrl: 'https://mhfuxacwpzzthethgfcp.supabase.co',
   supabaseKey: 'sb_publishable_C0xy28uIoRHuvMszTn0gNg_ESPIArth',
-  // The address players are sent to. It is fixed: home-screen installs are tied to it.
-  appUrl: 'https://teed.fgwilt1.workers.dev',
 };

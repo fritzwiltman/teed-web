@@ -26,7 +26,7 @@ export function redeemMessage(outcome: Exclude<RedeemOutcome, { status: 'ok' }>)
     case 'trip_not_live':
       return outcome.tripStatus === 'final'
         ? 'That trip has finished, so its codes no longer log in.'
-        : "That trip isn't open yet. Your organizer will tell you when it's live.";
+        : "That trip isn't open yet. Your organizer will tell you when it is.";
     case 'rate_limited':
       return 'Too many tries. Wait a few minutes and try again.';
     case 'offline':

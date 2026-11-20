@@ -27,7 +27,12 @@ const SPECTATOR: TripSession = { ...SAVED, role: 'spectator', player: null };
 async function boot(
   url: string,
   saved: TripSession | null,
-  options: { rounds?: unknown[]; platform?: InstallPlatform; redeem?: RedeemOutcome } = {},
+  options: {
+    rounds?: unknown[];
+    platform?: InstallPlatform;
+    canPrompt?: boolean;
+    redeem?: RedeemOutcome;
+  } = {},
 ) {
   const session = signal(saved);
   const revalidate = vi.fn(async () => {});
@@ -51,6 +56,7 @@ async function boot(
   });
   const logout = vi.fn(async () => session.set(null));
   const copied = vi.fn(async () => {});
+  const promptInstall = vi.fn(async () => {});
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
     value: { writeText: copied, readText: vi.fn(async () => '') },
@@ -80,8 +86,8 @@ async function boot(
         provide: InstallService,
         useValue: {
           platform: signal(options.platform ?? 'other'),
-          canPrompt: signal(false),
-          promptInstall: vi.fn(),
+          canPrompt: signal(options.canPrompt ?? false),
+          promptInstall,
         },
       },
     ],
@@ -103,7 +109,18 @@ async function boot(
     target!.click();
     await fixture.whenStable();
   };
-  return { fixture, router, session, revalidate, redeem, logout, copied, el, click };
+  return {
+    fixture,
+    router,
+    session,
+    revalidate,
+    redeem,
+    logout,
+    copied,
+    promptInstall,
+    el,
+    click,
+  };
 }
 
 const tabs = (el: HTMLElement) =>
@@ -235,10 +252,12 @@ describe('App', () => {
       expect(el.textContent).not.toContain('Jack');
     });
 
-    it('shows the course photo when there is one, and the LIVE pill for a live round', async () => {
+    const scored = [{ group_players: [{ position: 1, players: null, scores: [{ count: 3 }] }] }];
+
+    it('shows the course photo when there is one, and the LIVE pill once a score is in', async () => {
       const live = {
         ...round(1, iso(0)),
-        status: 'live',
+        groups: scored,
         courses: { name: 'Sandridge', photo_path: 'abc.jpg' },
       };
       const { el } = await boot('/home', SAVED, { rounds: [live] });
@@ -248,6 +267,19 @@ describe('App', () => {
       expect(card(el)?.querySelector('.live')?.textContent).toContain('Live');
     });
 
+    it('has no LIVE pill before the first score, or once the round is final', async () => {
+      const none = [{ group_players: [{ position: 1, players: null, scores: [{ count: 0 }] }] }];
+      const before = await boot('/home', SAVED, {
+        rounds: [{ ...round(1, iso(0)), status: 'live', groups: none }],
+      });
+      expect(card(before.el)?.querySelector('.live')).toBeNull();
+      TestBed.resetTestingModule();
+      const after = await boot('/home', SAVED, {
+        rounds: [{ ...round(1, iso(0)), status: 'final', groups: scored }],
+      });
+      expect(card(after.el)?.querySelector('.live')).toBeNull();
+    });
+
     it('ends with one button into scoring, worded for where the round is', async () => {
       const button = (el: HTMLElement) => card(el)?.querySelector('a[ui-button]');
       const before = await boot('/home', SAVED, { rounds: [round(1, iso(0))] });
@@ -255,7 +287,7 @@ describe('App', () => {
       expect(button(before.el)?.getAttribute('href')).toBe('/score');
       TestBed.resetTestingModule();
       const during = await boot('/home', SAVED, {
-        rounds: [{ ...round(1, iso(0)), status: 'live' }],
+        rounds: [{ ...round(1, iso(0)), groups: scored }],
       });
       expect(button(during.el)?.textContent?.trim()).toBe('Continue scoring');
       TestBed.resetTestingModule();
@@ -324,6 +356,9 @@ describe('App', () => {
   });
 
   describe('join link', () => {
+    const buttons = (el: HTMLElement) =>
+      [...el.querySelectorAll('button[ui-button]')].map((b) => b.textContent?.trim());
+
     it('logs straight in and, with nothing to install, goes home', async () => {
       const { router, redeem } = await boot('/join/K4M9QT', null);
       expect(redeem).toHaveBeenCalledWith('K4M9QT');
@@ -343,21 +378,42 @@ describe('App', () => {
     it('gives the steps for the browser in use', async () => {
       const chrome = await boot('/install', SAVED, { platform: 'ios-chrome' });
       expect(chrome.el.textContent).toContain('Chrome’s address bar');
-      expect(chrome.el.textContent).toContain('Continue in Chrome');
       TestBed.resetTestingModule();
       const android = await boot('/install', SAVED, { platform: 'android' });
       expect(android.el.textContent).toContain('Tap the ⋮ menu');
     });
 
-    it.each(['Continue in Safari', 'Not now'])(
-      'copies the code from the tap on "%s", then goes home',
-      async (label) => {
-        const { router, click, copied } = await boot('/install', SAVED, { platform: 'ios-safari' });
-        await click(label);
-        expect(copied).toHaveBeenCalledWith('K4M9QT');
-        expect(router.url).toBe('/home');
-      },
-    );
+    it('on an iPhone shows the code in large type and only "Not now"', async () => {
+      const { el } = await boot('/install', SAVED, { platform: 'ios-safari' });
+      expect(el.querySelector('.chars')?.textContent).toBe('K4M9QT');
+      expect(buttons(el)).toEqual(['Not now']);
+    });
+
+    it('"Not now" copies the code from the tap, then goes home', async () => {
+      const { router, click, copied } = await boot('/install', SAVED, { platform: 'ios-safari' });
+      await click('Not now');
+      expect(copied).toHaveBeenCalledWith('K4M9QT');
+      expect(router.url).toBe('/home');
+    });
+
+    it('on Android adds "Install Teed", which opens the system install prompt', async () => {
+      const plain = await boot('/install', SAVED, { platform: 'android' });
+      expect(buttons(plain.el)).toEqual(['Not now']);
+      TestBed.resetTestingModule();
+      const { el, click, router, promptInstall } = await boot('/install', SAVED, {
+        platform: 'android',
+        canPrompt: true,
+      });
+      expect(buttons(el)).toEqual(['Install Teed', 'Not now']);
+      await click('Install Teed');
+      expect(promptInstall).toHaveBeenCalled();
+      expect(router.url).toBe('/home');
+    });
+
+    it('never offers "Install Teed" on an iPhone', async () => {
+      const { el } = await boot('/install', SAVED, { platform: 'ios-safari', canPrompt: true });
+      expect(buttons(el)).toEqual(['Not now']);
+    });
 
     it('skips the step when already running from the Home Screen', async () => {
       const { router } = await boot('/install', SAVED, { platform: 'standalone' });

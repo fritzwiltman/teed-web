@@ -44,6 +44,13 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* While a sheet is open, the page behind it stays still. */
+html.ui-sheet-open,
+html.ui-sheet-open body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
