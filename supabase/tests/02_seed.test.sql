@@ -10,19 +10,20 @@ select results_eq(
   'the trip is there with its house rules (90%, off the low man, net double bogey)');
 
 select results_eq(
-  $$ select p.name, p.handicap_index from public.players p join public.trips t on t.id = p.trip_id where t.slug = 'PINES' order by p.sort_order $$,
+  $$ select p.name, p.handicap_index from public.trip_members p join public.trips t on t.id = p.trip_id where t.slug = 'PINES' order by p.sort_order $$,
   $$ values ('Fritz', 18.6::numeric(3,1)), ('Von', 8.1), ('Matt', 28.7), ('Charlie', 19.1) $$,
   'four players with their GHIN indexes');
 
 select results_eq(
-  $$ select b.name, o.name, o.role from public.trips t
-     join public.players b on b.id = t.banker_player_id join public.players o on o.id = t.owner_player_id where t.slug = 'PINES' $$,
-  $$ values ('Fritz', 'Fritz', 'player') $$, 'Fritz is the banker and the owner, with ordinary player rights');
+  $$ select b.name, o.name from public.trips t
+     join public.trip_members b on b.id = t.banker_player_id
+     join public.trip_members o on o.trip_id = t.id and o.role = 'organizer' where t.slug = 'PINES' $$,
+  $$ values ('Fritz', 'Fritz') $$, 'Fritz is the banker and the organizer');
 
 select results_eq(
-  $$ select count(*) from public.player_codes c join public.players p on p.id = c.player_id join public.trips t on t.id = p.trip_id
-     where t.slug = 'PINES' and c.code ~ ('^PINES-' || p.initials || '26-[A-HJ-NP-Z2-9]{4}$') $$,
-  'select 4::bigint', 'every player has a generated login code');
+  $$ select count(*) from public.trip_members m join public.trips t on t.id = m.trip_id
+     where t.slug = 'PINES' and m.index_locked_at is not null and m.profile_id is null and m.email is null $$,
+  'select 4::bigint', 'every index is locked for the trip, and nobody is linked to an account or an email');
 
 select results_eq(
   $$ select c.short_name, t.name, t.yards, t.rating, t.slope::int, (select sum(x) from unnest(t.par) x)
@@ -49,7 +50,7 @@ select results_eq(
 select results_eq(
   $$ select r.round_number::int, p.name, gp.course_handicap::int, gp.playing_handicap::int, gp.team
      from public.group_players gp join public.rounds r on r.id = gp.round_id join public.trips t on t.id = r.trip_id
-     join public.players p on p.id = gp.player_id
+     join public.trip_members p on p.id = gp.player_id
      where t.slug = 'PINES' order by r.round_number, gp.position $$,
   $$ values (1,           'Fritz', 22,           19,           null), (1, 'Von',  9,  8, null), (1, 'Matt', 34, 30, null), (1, 'Charlie', 22, 20, null),
             (2,           'Fritz', 22,           19,           'B'),  (2, 'Von',  9,  8, 'A'),  (2, 'Matt', 34, 30, 'A'),  (2, 'Charlie', 22, 20, 'B'),
@@ -70,7 +71,7 @@ select results_eq(
   $$ select r.round_number::int, p.name,
             sum(s.strokes) filter (where s.hole <= 9), sum(s.strokes) filter (where s.hole > 9), sum(s.strokes)
      from public.scores s join public.rounds r on r.id = s.round_id join public.trips t on t.id = r.trip_id
-     join public.players p on p.id = s.player_id
+     join public.trip_members p on p.id = s.player_id
      where t.slug = 'PINES' group by r.round_number, p.name, p.sort_order order by r.round_number, p.sort_order $$,
   $$ values (1,           'Fritz', 43::bigint, 51::bigint, 94::bigint), (1, 'Von', 45, 40, 85), (1, 'Matt', 62, 54, 116), (1, 'Charlie', 52, 47,  99),
             (2,           'Fritz', 51,         48,         99),         (2, 'Von', 44, 46, 90), (2, 'Matt', 54, 53, 107), (2, 'Charlie', 52, 50, 102),

@@ -6,7 +6,8 @@
 -- reproduce from this data is in southern-pines-2026.expected.json.
 --
 -- Safe to run more than once: courses are skipped if they exist, and the trip part does nothing
--- once the trip is there. Login codes are generated here at random, never committed (public repo).
+-- once the trip is there. Fritz is its organizer; nobody is linked to an account here (the repo is
+-- public, so no emails): people join by invite, or the organizer adds their email.
 
 -- ── Course library ──────────────────────────────────────────────────────────
 
@@ -59,33 +60,25 @@ begin
     return;
   end if;
 
-  -- Owned by the first app admin if there is one yet (see README.md in this folder).
   -- Final: the trip is over, so it is readable but scores are closed. Set status to 'live' to test scoring.
-  insert into public.trips (id, owner_id, name, slug, location, start_date, end_date, status,
+  insert into public.trips (id, name, slug, location, start_date, end_date, status,
                             handicap_allowance, strokes_off_low, pickup_net_double, handicap_lock_date)
-  values (v_trip, (select user_id from public.app_admins order by created_at limit 1),
-          'Southern Pines 2026', 'PINES', 'Southern Pines, NC', '2026-10-08', '2026-10-12', 'final',
+  values (v_trip, 'Southern Pines 2026', 'PINES', 'Southern Pines, NC', '2026-10-08', '2026-10-12', 'final',
           0.90, true, true, '2026-10-01');
 
-  -- Indexes from GHIN as pulled for the trip. Initials other than Fritz's are placeholders.
-  insert into public.players (trip_id, name, initials, role, handicap_index, index_entered_at, index_locked_at, sort_order)
+  -- Indexes from GHIN as pulled for the trip, locked on Oct 1. Initials other than Fritz's are placeholders.
+  insert into public.trip_members (trip_id, name, initials, role, handicap_index, index_entered_at, index_locked_at, sort_order)
   values
-    (v_trip, 'Fritz',   'FW', 'player',   18.6, '2026-10-01', '2026-10-01', 1),
-    (v_trip, 'Von',     'V',  'player',    8.1, '2026-10-01', '2026-10-01', 2),
-    (v_trip, 'Matt',    'M',  'player',   28.7, '2026-10-01', '2026-10-01', 3),
-    (v_trip, 'Charlie', 'C',  'player',   19.1, '2026-10-01', '2026-10-01', 4);
+    (v_trip, 'Fritz',   'FW', 'organizer', 18.6, '2026-10-01', '2026-10-01', 1),
+    (v_trip, 'Von',     'V',  'player',     8.1, '2026-10-01', '2026-10-01', 2),
+    (v_trip, 'Matt',    'M',  'player',    28.7, '2026-10-01', '2026-10-01', 3),
+    (v_trip, 'Charlie', 'C',  'player',    19.1, '2026-10-01', '2026-10-01', 4);
 
-  -- Fritz is the banker, and the owner (display only: owner rights come from the email sign-in).
+  -- Fritz is the banker.
   update public.trips t
-     set banker_player_id = p.id, owner_player_id = p.id
-    from public.players p
+     set banker_player_id = p.id
+    from public.trip_members p
    where t.id = v_trip and p.trip_id = v_trip and p.name = 'Fritz';
-
-  -- Random login codes: PINES-<initials>26-<4 characters>.
-  insert into public.player_codes (player_id, code)
-  select p.id, 'PINES-' || p.initials || '26-' || private.random_code_suffix()
-  from public.players p
-  where p.trip_id = v_trip;
 
   -- Rounds
   insert into public.rounds (trip_id, round_number, course_id, tee_id, play_date, tee_time, status, pairings_tbd, drive_note)
@@ -131,7 +124,7 @@ begin
   ) as v (n, player, team, course_handicap, playing_handicap)
   join public.rounds r on r.trip_id = v_trip and r.round_number = v.n
   join public.groups g on g.round_id = r.id and g.group_number = 1
-  join public.players p on p.trip_id = v_trip and p.name = v.player;
+  join public.trip_members p on p.trip_id = v_trip and p.name = v.player;
 
   -- Friday: Matt & Charlie pressed match 1 after hole 5.
   insert into public.presses (round_id, round_format_id, group_id, bet, after_hole, created_by)
@@ -164,7 +157,7 @@ begin
   ) as v (n, player, strokes)
   cross join lateral unnest(v.strokes) with ordinality as h (strokes, hole)
   join public.rounds r on r.trip_id = v_trip and r.round_number = v.n
-  join public.players p on p.trip_id = v_trip and p.name = v.player;
+  join public.trip_members p on p.trip_id = v_trip and p.name = v.player;
 
   -- A short itinerary: lodging, dinners, departures, and the per-person costs.
   insert into public.itinerary_items (trip_id, day, start_time, type, title, details, sort_order)

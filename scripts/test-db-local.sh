@@ -45,7 +45,7 @@ status=0
 for f in supabase/tests/*.sql; do
   echo
   echo "== $f"
-  if out="$(run -At -f "$f" 2>&1)"; then
+  if out="$(run -At ${PSQL_EXTRA:-} -f "$f" 2>&1)"; then
     if grep -Eq '^(not ok|# Looks like you)' <<<"$out"; then
       grep -Ev '^ok ' <<<"$out"
       status=1
@@ -53,7 +53,7 @@ for f in supabase/tests/*.sql; do
       echo "ok: $(grep -c '^ok ' <<<"$out") tests passed"
     fi
   else
-    echo "$out" | tail -20
+    echo "$out" | tail -${TAIL:-20}
     status=1
   fi
 done
