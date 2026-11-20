@@ -1,54 +1,74 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router, Routes } from '@angular/router';
+import { AuthService } from '../core/auth';
 import { SessionService } from '../core/session';
-import { AdminAuth } from './auth';
 import { AdminHome } from './admin-home';
 import { AdminShell } from './admin-shell';
 import { CourseAdd } from './course-add';
 import { CourseEdit } from './course-edit';
 import { Courses } from './courses';
+import { Creators } from './creators';
+import { AdminData } from './data';
 import { MyTrips } from './my-trips';
 import { Roster } from './roster';
 import { Rounds } from './rounds';
-import { SignIn } from './sign-in';
 import { Stub } from './stub';
 import { TripDetails } from './trip-details';
 
-/** The organizer's own screens (their trips, new trips, the course library): email sign-in only. */
-export const organizerOnly: CanActivateFn = async () => {
-  const auth = inject(AdminAuth);
+/** Signed in, and one of the people who may create trips (or the app admin). */
+export const creatorOnly: CanActivateFn = async () => {
+  const auth = inject(AuthService);
   const router = inject(Router);
   await auth.ready();
-  return auth.isOrganizer() ? true : router.parseUrl('/admin/sign-in');
+  const me = auth.me();
+  if (!me) return router.parseUrl('/login');
+  return me.is_trip_creator || me.is_admin ? true : router.parseUrl('/you');
+};
+
+/** The app admin's own screens: every trip, and who may create trips. */
+export const adminOnly: CanActivateFn = async () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  await auth.ready();
+  const me = auth.me();
+  if (!me) return router.parseUrl('/login');
+  return me.is_admin ? true : router.parseUrl('/you');
 };
 
 /**
- * One trip's screens: the organizer, or a co-admin of that trip on the phone they logged in on
- * with their code. (What a co-admin can actually change is decided by the database.)
+ * One trip's organizer screens: its organizer, a co-organizer, or the app admin. (What each can
+ * actually change is decided by the database.) With no signal, the open trip's saved role decides.
  */
 export const tripAdmin: CanActivateFn = async (route) => {
-  const auth = inject(AdminAuth);
+  const auth = inject(AuthService);
   const router = inject(Router);
-  const session = inject(SessionService).session();
+  const sessions = inject(SessionService);
+  const data = inject(AdminData);
+  const id = route.paramMap.get('id') ?? '';
   await auth.ready();
-  if (auth.isOrganizer()) return true;
-  const coAdmin =
-    session?.via !== 'owner' &&
-    session?.player?.role === 'co_admin' &&
-    session.trip.id === route.paramMap.get('id');
-  return coAdmin ? true : router.parseUrl('/admin/sign-in');
+  if (!auth.me()) return router.parseUrl('/login');
+  try {
+    const role = await data.tripRole(id);
+    return role && role !== 'player' ? true : router.parseUrl('/you');
+  } catch {
+    return sessions.session()?.trip.id === id && sessions.canManage()
+      ? true
+      : router.parseUrl('/you');
+  }
 };
 
 const trip = { canActivate: [tripAdmin] };
-const own = { canActivate: [organizerOnly] };
+const own = { canActivate: [creatorOnly] };
+const admin = { canActivate: [adminOnly] };
 
 export const ADMIN_ROUTES: Routes = [
-  { path: 'sign-in', component: SignIn, title: 'Teed · Organizer sign-in' },
+  { path: 'sign-in', redirectTo: '/login' },
   {
     path: '',
     component: AdminShell,
     children: [
-      { path: '', component: MyTrips, title: 'Teed · My trips', ...own },
+      { path: '', component: MyTrips, title: 'Teed · All trips', ...admin },
+      { path: 'creators', component: Creators, title: 'Teed · Trip creators', ...admin },
       { path: 'trips/new', component: TripDetails, title: 'Teed · New trip', ...own },
       { path: 'trips/:id', component: AdminHome, title: 'Teed · Overview', ...trip },
       { path: 'trips/:id/details', component: TripDetails, title: 'Teed · Trip details', ...trip },

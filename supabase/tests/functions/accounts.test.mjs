@@ -229,6 +229,25 @@ test('a friend organizes: the admin invites Brendan, who makes a trip and adds t
   });
   assert.ok(!organizerIdea.ok, 'organizers edit directly: they do not suggest');
 
+  // The exact reads the app's screens make, so a renamed table or relationship fails here.
+  const creators = await rest(fritz.token, 'GET', 'trip_creators?select=id,name,phone,claimed_at,profiles!trip_creators_profile_id_fkey(email)');
+  assert.equal(creators.status, 200, JSON.stringify(creators.body));
+  assert.equal(creators.body.find((c) => c.name === 'Brendan')?.profiles?.email, brendan.email);
+  const myRow = await rest(sean.token, 'GET', `trip_members?select=id,name,initials,role&id=eq.${me.id}`);
+  assert.deepEqual(myRow.body, [{ id: me.id, name: 'Sean', initials: 'S', role: 'player' }]);
+  const homeRounds = await rest(sean.token, 'GET',
+    `rounds?select=round_number,play_date,tee_time,status,courses(name,photo_path),tees(name),round_formats(format_key),groups(group_players(position,players:trip_members(id,name),scores(count)))&trip_id=eq.${trip}&order=play_date,round_number`);
+  assert.equal(homeRounds.status, 200, JSON.stringify(homeRounds.body));
+  const adminRounds = await rest(brendan.token, 'GET',
+    `rounds?select=id,round_number,play_date,tee_time,status,pairings_tbd,courses(name,short_name),groups(group_players(scores(count)))&trip_id=eq.${trip}&order=round_number`);
+  assert.equal(adminRounds.status, 200, JSON.stringify(adminRounds.body));
+  assert.ok(!(await rest(sean.token, 'GET', `trip_members?select=email&trip_id=eq.${trip}`)).ok, 'emails are not readable from the table');
+  const trips = (await rpc(sean.token, 'my_trips')).body;
+  assert.deepEqual(trips.map((t) => [t.id, t.role, t.stage, t.player_count]), [[trip, 'player', 'upcoming', 3]]);
+  const managed = (await rpc(brendan.token, 'trip_roster', { p_trip_id: trip })).body;
+  assert.deepEqual(managed.find((m) => m.name === 'Sean').flags, { no_email: false, not_claimed: false, not_paid: false });
+  assert.equal(managed.find((m) => m.name === 'Sean').email, sean.email);
+
   // The spectator link.
   const outsider = await signIn('outsider');
   const link = (action, token) => fn('spectator-link', { trip_id: trip, action }, token);

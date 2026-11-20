@@ -1,6 +1,17 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { AuthService } from '../core/auth';
+import { Role } from '../core/session';
 import {
+  formatPhone,
+  initialsFor,
+  inviteMessage,
+  sendText,
+  spectatorMessage,
+  tidyPhone,
+} from '../core/sms';
+import {
+  Choice,
   UiButton,
   UiCard,
   UiChip,
@@ -8,27 +19,34 @@ import {
   UiIcon,
   UiListRow,
   UiSectionHead,
+  UiSegmented,
   UiSheet,
   UiSkeleton,
-  UiSwitch,
 } from '../core/ui';
-import { displayCode } from '../core/code';
-import { AdminAuth } from './auth';
+import { AdminData, AdminError, MemberFields, RosterPlayer, Trip, TripRole } from './data';
 import { OrganizerHeader } from './organizer-header';
-import {
-  linkMessage,
-  formatPhone,
-  initialsFor,
-  smsLink,
-  spectatorMessage,
-  tidyPhone,
-} from '../core/sms';
-import { AdminData, AdminError, PlayerFields, RosterPlayer, SpectatorCode, Trip } from './data';
 
-type Form = { name: string; initials: string; phone: string; index: string };
-const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
+type Form = {
+  name: string;
+  initials: string;
+  email: string;
+  phone: string;
+  index: string;
+  role: Role;
+};
+const EMPTY: Form = { name: '', initials: '', email: '', phone: '', index: '', role: 'player' };
 
-/** People: the players, texting each their link, and the spectator link. */
+const ROLE_NAME: Record<Role, string> = {
+  organizer: 'Organizer',
+  co_organizer: 'Co-organizer',
+  player: 'Player',
+};
+
+/**
+ * People: everyone on the trip, inviting them, their roles, and the spectator link.
+ * The organizer and co-organizers both run this screen; only the organizer (or the app admin)
+ * chooses co-organizers and removes them.
+ */
 @Component({
   selector: 'app-roster',
   imports: [
@@ -41,9 +59,9 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
     UiIcon,
     UiListRow,
     UiSectionHead,
+    UiSegmented,
     UiSheet,
     UiSkeleton,
-    UiSwitch,
   ],
   template: `
     <app-organizer-header title="People" [trip]="trip()" />
@@ -53,24 +71,24 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
       }
 
       @if (sendingTo(); as p) {
-        <ui-card pad aria-label="Text everyone their link">
+        <ui-card pad aria-label="Text everyone their invite">
           <ui-section-head
-            title="Text links"
-            [note]="sending()! + 1 + ' of ' + withCodes().length"
+            title="Text invites"
+            [note]="sending()! + 1 + ' of ' + toInvite().length"
           />
           <p>{{ p.name }}</p>
           <div class="actions">
-            <button ui-button size="small" type="button" (click)="text(p)">
+            <button ui-button size="small" type="button" [disabled]="busy()" (click)="text(p)">
               {{ p.phone ? 'Text' : 'Share with' }} {{ p.name }}
             </button>
             <button ui-button size="small" variant="outline" type="button" (click)="nextSend()">
-              {{ sending()! + 1 < withCodes().length ? 'Next' : 'Done' }}
+              {{ sending()! + 1 < toInvite().length ? 'Next' : 'Done' }}
             </button>
           </div>
         </ui-card>
-      } @else if (owner() && withCodes().length > 1 && !readOnly()) {
+      } @else if (toInvite().length > 1 && !readOnly()) {
         <button ui-button variant="outline" type="button" (click)="sending.set(0)">
-          Text everyone their link
+          Text everyone their invite
         </button>
       }
 
@@ -78,18 +96,15 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
         <ui-card aria-label="Players">
           @for (p of list; track p.id) {
             <ui-list-row [title]="p.name" [detail]="detail(p)">
-              @if (trip()?.owner_player_id === p.id) {
-                <ui-chip after-title>Owner</ui-chip>
+              @if (p.role !== 'player') {
+                <ui-chip after-title>{{ roleName(p.role) }}</ui-chip>
               }
-              @if (p.role === 'co_admin') {
-                <ui-chip after-title>Co-admin</ui-chip>
+              @for (flag of flags(p); track flag) {
+                <span below class="warn-text">{{ flag }}</span>
               }
-              @if (!p.index_entered_at) {
-                <span below class="warn-text">Index not confirmed</span>
-              }
-              @if (p.code) {
-                <button ui-button size="small" type="button" (click)="text(p)">
-                  {{ copied() === p.id ? 'Copied' : 'Text link' }}
+              @if (p.claimed === false && !readOnly()) {
+                <button ui-button size="small" type="button" [disabled]="busy()" (click)="text(p)">
+                  {{ copied() === p.id ? 'Copied' : 'Text invite' }}
                 </button>
               }
               @if (!readOnly()) {
@@ -106,12 +121,12 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
               }
             </ui-list-row>
           }
-          @if (owner() && !readOnly()) {
+          @if (!readOnly()) {
             <button
               ui-list-row
               type="button"
               icon="plus"
-              title="Add player"
+              title="Add a player"
               (click)="startAdd()"
             ></button>
           }
@@ -120,23 +135,25 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
         <ui-skeleton shape="block" height="230px" />
       }
 
-      @if (owner() && players()) {
+      @if (players() && trip()?.status !== 'draft') {
         <ui-card aria-label="Spectators">
           <ui-section-head title="Spectators" />
-          @if (spectator(); as s) {
-            <ui-list-row [title]="shown(s.code)">
-              @if (s.enabled) {
-                <button ui-button size="small" type="button" (click)="shareSpectator(s)">
-                  {{ copied() === s.id ? 'Copied' : 'Share link' }}
-                </button>
-              }
+          @if (spectator(); as token) {
+            <ui-list-row title="Spectator link">
+              <button ui-button size="small" type="button" (click)="shareSpectator(token)">
+                {{ copied() === 'spectator' ? 'Copied' : 'Share link' }}
+              </button>
               @if (!readOnly()) {
-                <ui-switch
-                  label="Spectator link"
-                  [checked]="s.enabled"
+                <button
+                  ui-button
+                  size="small"
+                  variant="outline"
+                  type="button"
                   [disabled]="busy()"
-                  (checkedChange)="setSpectator(s, $event)"
-                />
+                  (click)="resetting.set(true)"
+                >
+                  Reset
+                </button>
               }
             </ui-list-row>
           } @else if (!readOnly()) {
@@ -146,7 +163,7 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
               icon="plus"
               title="Create spectator link"
               [disabled]="busy()"
-              (click)="createSpectator()"
+              (click)="resetSpectator()"
             ></button>
           }
         </ui-card>
@@ -159,77 +176,65 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
           @case ('menu') {
             <h2>{{ p.name }}</h2>
             <button ui-button variant="outline" type="button" (click)="startEdit(p)">Edit</button>
-            @if (owner()) {
-              <button ui-button variant="outline" type="button" (click)="startReplace()">
-                Replace player
+            @if (canRemove(p)) {
+              <button ui-button variant="outline" type="button" (click)="mode.set('remove')">
+                Remove from trip
               </button>
-              <button
-                ui-button
-                variant="outline"
-                type="button"
-                [disabled]="busy()"
-                (click)="regenerate(p)"
-              >
-                New code
-              </button>
-              <button
-                ui-button
-                variant="outline"
-                type="button"
-                [disabled]="busy()"
-                (click)="toggleCoAdmin(p)"
-              >
-                {{ p.role === 'co_admin' ? 'Remove co-admin' : 'Make co-admin' }}
-              </button>
-              @if (trip()?.owner_player_id !== p.id) {
-                <button
-                  ui-button
-                  variant="outline"
-                  type="button"
-                  [disabled]="busy()"
-                  (click)="thisIsMe(p)"
-                >
-                  This is me
-                </button>
-              }
             }
           }
           @case ('edit') {
             <h2>Edit {{ p.name }}</h2>
             <form class="stack" (submit)="saveEdit($event, p)" novalidate>
-              <ng-container *ngTemplateOutlet="fields; context: { full: true }" />
+              <ng-container *ngTemplateOutlet="fields; context: { member: p }" />
               <button ui-button type="submit" [busy]="busy()">Save</button>
               <button ui-button variant="outline" type="button" (click)="mode.set('menu')">
                 Cancel
               </button>
             </form>
           }
-          @case ('replace') {
-            <h2>Replace {{ p.name }}</h2>
-            <form class="stack" (submit)="saveReplace($event, p)" novalidate>
-              <ng-container *ngTemplateOutlet="fields; context: { full: false }" />
-              <button ui-button type="submit" [busy]="busy()">Replace</button>
-              <button ui-button variant="outline" type="button" (click)="mode.set('menu')">
-                Cancel
-              </button>
-            </form>
+          @case ('remove') {
+            <h2>Remove {{ p.name }}?</h2>
+            <p class="detail">
+              They come off the trip and out of every group. Scores they already entered stay on the
+              scorecards.
+            </p>
+            @if (formError(); as text) {
+              <p class="error-text" role="alert">{{ text }}</p>
+            }
+            <button ui-button type="button" class="danger" [busy]="busy()" (click)="remove(p)">
+              Remove {{ p.name }}
+            </button>
+            <button ui-button variant="outline" type="button" (click)="mode.set('menu')">
+              Cancel
+            </button>
           }
         }
       }
     </ui-sheet>
 
-    <ui-sheet [open]="adding()" (openChange)="adding.set(false)" label="Add player">
-      <h2>Add player</h2>
+    <ui-sheet [open]="adding()" (openChange)="adding.set(false)" label="Add a player">
+      <h2>Add a player</h2>
       <form class="stack" (submit)="saveNew($event)" novalidate>
-        <ng-container *ngTemplateOutlet="fields; context: { full: true }" />
-        <button ui-button type="submit" [busy]="busy()">Add player</button>
+        <ng-container *ngTemplateOutlet="fields; context: { member: null }" />
+        <button ui-button type="submit" [busy]="busy()">Save and text invite</button>
         <button ui-button variant="outline" type="button" (click)="adding.set(false)">
           Cancel
         </button>
       </form>
     </ui-sheet>
 
-    <ng-template #fields let-full="full">
+    <ui-sheet [(open)]="resetting" label="Reset spectator link">
+      <h2>Reset the spectator link?</h2>
+      <p class="detail">The link people have now stops working. This can't be undone.</p>
+      <button ui-button type="button" class="danger" [busy]="busy()" (click)="resetSpectator()">
+        Reset link
+      </button>
+      <button ui-button variant="outline" type="button" (click)="resetting.set(false)">
+        Cancel
+      </button>
+    </ui-sheet>
+
+    <ng-template #fields let-member="member">
       <div class="pair wide">
         <ui-field label="Name">
           <input name="name" autocomplete="off" [value]="form().name" (input)="setName($event)" />
@@ -245,73 +250,106 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
           />
         </ui-field>
       </div>
-      @if (full) {
-        <div class="pair wide">
-          @if (owner()) {
-            <ui-field label="Mobile">
-              <input
-                name="phone"
-                type="tel"
-                inputmode="tel"
-                autocomplete="off"
-                [value]="form().phone"
-                (input)="setForm('phone', $event)"
-              />
-            </ui-field>
-          }
-          <ui-field label="Index">
-            <input
-              name="index"
-              inputmode="decimal"
-              autocomplete="off"
-              placeholder="18.6"
-              [value]="form().index"
-              (input)="setForm('index', $event)"
-            />
-          </ui-field>
-        </div>
+      <ui-field label="Email">
+        <input
+          name="email"
+          type="email"
+          inputmode="email"
+          autocomplete="off"
+          autocapitalize="none"
+          [value]="form().email"
+          [disabled]="!!member?.claimed"
+          (input)="setForm('email', $event)"
+        />
+      </ui-field>
+      <div class="pair wide">
+        <ui-field label="Mobile">
+          <input
+            name="phone"
+            type="tel"
+            inputmode="tel"
+            autocomplete="off"
+            [value]="form().phone"
+            (input)="setForm('phone', $event)"
+          />
+        </ui-field>
+        <ui-field label="Handicap index">
+          <input
+            name="index"
+            inputmode="decimal"
+            autocomplete="off"
+            placeholder="18.6"
+            [value]="form().index"
+            (input)="setForm('index', $event)"
+          />
+        </ui-field>
+      </div>
+      @if (owner() && member?.role !== 'organizer') {
+        <ui-segmented
+          label="Role"
+          [options]="roles"
+          [value]="form().role"
+          (valueChange)="setRole($event)"
+        />
       }
       @if (formError(); as text) {
         <p class="error-text" role="alert">{{ text }}</p>
       }
     </ng-template>
   `,
+  styles: `
+    .danger {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff;
+    }
+  `,
 })
 export class Roster {
   readonly id = input.required<string>();
-  /** ?send=all opens "Text everyone their link" (where Overview sends you after publishing). */
+  /** ?send=all opens "Text everyone their invite" (where Overview sends you after publishing). */
   readonly send = input<string>();
 
   private readonly data = inject(AdminData);
-  private readonly auth = inject(AdminAuth);
-
-  /** Codes, links, phone numbers, adding and replacing players are the owner's; a co-admin edits. */
-  protected readonly owner = this.auth.isOrganizer;
+  private readonly me = inject(AuthService).me;
 
   protected readonly trip = signal<Trip | null>(null);
   protected readonly players = signal<RosterPlayer[] | null>(null);
-  protected readonly spectator = signal<SpectatorCode | null>(null);
+  /** The caller's standing on this trip. */
+  private readonly role = signal<TripRole | null>(null);
+  /** Choosing and removing co-organizers is the organizer's (and the app admin's). */
+  protected readonly owner = computed(() => this.role() === 'organizer' || this.role() === 'admin');
+  /** The spectator link's token, once one has been made. */
+  protected readonly spectator = signal<string | null>(null);
+  protected readonly resetting = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly readOnly = computed(() => this.trip()?.status === 'final');
 
-  // Which player's menu is open, and what it is showing.
+  // Whose menu is open, and what it is showing.
   protected readonly open = signal<string | null>(null);
-  protected readonly mode = signal<'menu' | 'edit' | 'replace'>('menu');
+  protected readonly mode = signal<'menu' | 'edit' | 'remove'>('menu');
   protected readonly adding = signal(false);
   protected readonly form = signal<Form>(EMPTY);
   protected readonly formError = signal<string | null>(null);
   private initialsTouched = false;
 
-  // "Text all codes": the index of the player being texted.
+  protected readonly roles: Choice<Role>[] = [
+    { value: 'player', label: 'Player' },
+    { value: 'co_organizer', label: 'Co-organizer' },
+  ];
+
+  // "Text everyone their invite": the index of the person being texted.
   protected readonly sending = signal<number | null>(null);
-  protected readonly withCodes = computed(() => (this.players() ?? []).filter((p) => p.code));
+  protected readonly toInvite = computed(() =>
+    (this.players() ?? []).filter((p) => p.claimed === false),
+  );
   protected readonly menuFor = computed(
     () => (this.players() ?? []).find((p) => p.id === this.open()) ?? null,
   );
   protected readonly sendingTo = computed(() => {
     const i = this.sending();
-    return i === null ? null : (this.withCodes()[i] ?? null);
+    return i === null ? null : (this.toInvite()[i] ?? null);
   });
   protected readonly copied = signal<string | null>(null);
 
@@ -319,55 +357,83 @@ export class Roster {
     effect(() => void this.load(this.id(), this.send() === 'all'));
   }
 
-  // ── Sending codes ──────────────────────────────────────────────────────────
+  // ── Inviting ───────────────────────────────────────────────────────────────
 
+  /** Texts someone a fresh invite link (the one sent before stops working). */
   protected async text(player: RosterPlayer): Promise<void> {
-    if (!player.code) return;
-    const message = linkMessage(this.trip()?.name ?? 'the trip', player.code);
-    if (player.phone) {
-      location.href = smsLink(player.phone, message);
-    } else {
-      await this.share(message, player.id);
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      const token = await this.data.invite(player.id);
+      await this.deliver(player.id, player.phone ?? null, this.inviteText(token));
+    } catch (e) {
+      this.error.set(e instanceof AdminError ? e.message : "Couldn't make the invite link.");
+    } finally {
+      this.busy.set(false);
     }
   }
 
-  protected async shareSpectator(code: SpectatorCode): Promise<void> {
-    await this.share(spectatorMessage(this.trip()?.name ?? 'the trip', code.code), code.id);
+  private inviteText(token: string): string {
+    return inviteMessage(this.me()?.display_name ?? '', this.trip()?.name ?? 'a golf trip', token);
   }
 
-  /** The phone's share sheet; where there isn't one, the message is copied instead. */
-  private async share(message: string, id: string): Promise<void> {
-    try {
-      if (typeof navigator.share === 'function') {
-        await navigator.share({ text: message });
-      } else {
-        await navigator.clipboard.writeText(message);
-        this.copied.set(id);
-        setTimeout(() => this.copied.set(null), 2500);
-      }
-    } catch {
-      // they closed the share sheet
+  private async deliver(id: string, phone: string | null, message: string): Promise<void> {
+    if ((await sendText(phone, message)) === 'copied') {
+      this.copied.set(id);
+      setTimeout(() => this.copied.set(null), 2500);
     }
   }
 
   protected nextSend(): void {
     const next = (this.sending() ?? 0) + 1;
-    this.sending.set(next < this.withCodes().length ? next : null);
+    this.sending.set(next < this.toInvite().length ? next : null);
+  }
+
+  protected async shareSpectator(token: string): Promise<void> {
+    await this.deliver('spectator', null, spectatorMessage(this.trip()?.name ?? 'the trip', token));
+  }
+
+  /** Makes the spectator link, or replaces it: the old link stops working. */
+  protected async resetSpectator(): Promise<void> {
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      this.spectator.set(await this.data.spectatorToken(this.id(), 'reset'));
+    } catch (e) {
+      this.error.set(e instanceof AdminError ? e.message : "Couldn't reset the link.");
+    } finally {
+      this.busy.set(false);
+      this.resetting.set(false);
+    }
+  }
+
+  // ── Rows ───────────────────────────────────────────────────────────────────
+
+  protected roleName(role: Role): string {
+    return ROLE_NAME[role];
+  }
+
+  /** "Index 18.6" */
+  protected detail(player: RosterPlayer): string {
+    return player.handicap_index === null ? '' : `Index ${player.handicap_index}`;
+  }
+
+  /** The "!" flags, from the data: only the organizer, co-organizers and the app admin get them. */
+  protected flags(player: RosterPlayer): string[] {
+    const f = player.flags;
+    if (!f) return [];
+    return [
+      f.not_claimed && (f.no_email ? 'No email yet' : 'Not joined yet'),
+      f.not_paid && 'Buy-in not paid',
+    ].filter((text): text is string => !!text);
+  }
+
+  /** Players by anyone running the trip; co-organizers by the organizer; the organizer never. */
+  protected canRemove(player: RosterPlayer): boolean {
+    return player.role === 'player' || (player.role === 'co_organizer' && this.owner());
   }
 
   // ── Menu and forms ─────────────────────────────────────────────────────────
-
-  /** "K4M9QT · Index 18.6": the code (owner only) and the handicap index. */
-  protected detail(player: RosterPlayer): string {
-    return [
-      player.code && displayCode(player.code),
-      player.handicap_index === null ? null : `Index ${player.handicap_index}`,
-    ]
-      .filter(Boolean)
-      .join(' · ');
-  }
-
-  protected readonly shown = displayCode;
 
   protected closeSheet(): void {
     this.open.set(null);
@@ -378,6 +444,7 @@ export class Roster {
     this.open.set(this.open() === player.id ? null : player.id);
     this.mode.set('menu');
     this.adding.set(false);
+    this.formError.set(null);
   }
 
   protected startAdd(): void {
@@ -390,16 +457,13 @@ export class Roster {
     this.resetForm({
       name: player.name,
       initials: player.initials,
+      email: player.email ?? '',
       phone: player.phone ? formatPhone(player.phone) : '',
       index: player.handicap_index === null ? '' : String(player.handicap_index),
+      role: player.role,
     });
     this.initialsTouched = true;
     this.mode.set('edit');
-  }
-
-  protected startReplace(): void {
-    this.resetForm(EMPTY);
-    this.mode.set('replace');
   }
 
   private resetForm(form: Form): void {
@@ -419,7 +483,7 @@ export class Roster {
     this.formError.set(null);
   }
 
-  protected setForm(key: keyof Form, event: Event): void {
+  protected setForm(key: Exclude<keyof Form, 'role'>, event: Event): void {
     const input = event.target as HTMLInputElement;
     if (key === 'initials') {
       input.value = input.value.toUpperCase().replace(/[^A-Z]/g, '');
@@ -429,85 +493,69 @@ export class Roster {
     this.formError.set(null);
   }
 
+  protected setRole(role: Role | null): void {
+    this.form.update((f) => ({ ...f, role: role ?? 'player' }));
+  }
+
   /** Checks the form. Returns the fields to save, or null after setting the message. */
-  private read(full: boolean): PlayerFields | null {
+  private read(): MemberFields | null {
     const f = this.form();
     const name = f.name.trim();
+    const email = f.email.trim().toLowerCase() || null;
     const phone = f.phone.trim() ? tidyPhone(f.phone) : null;
     const index = f.index.trim() === '' ? null : Number(f.index.replace('+', '-'));
     const problem = !name
       ? 'Enter a name.'
       : !/^[A-Z]{1,4}$/.test(f.initials)
         ? 'Initials are 1 to 4 letters.'
-        : full && f.phone.trim() && !phone
-          ? "That doesn't look like a mobile number."
-          : full && index !== null && (Number.isNaN(index) || index < -9.9 || index > 54)
-            ? 'A handicap index is a number up to 54.0.'
-            : null;
+        : email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+          ? "That doesn't look like an email address."
+          : f.phone.trim() && !phone
+            ? "That doesn't look like a mobile number."
+            : index !== null && (Number.isNaN(index) || index < -9.9 || index > 54)
+              ? 'A handicap index is a number up to 54.0.'
+              : null;
     this.formError.set(problem);
     return problem
       ? null
       : {
           name,
           initials: f.initials,
+          email,
           phone,
           handicap_index: index === null ? null : Math.round(index * 10) / 10,
+          role: f.role,
         };
   }
 
+  /** "Save and text invite": adds them, then opens the text with their link. */
   protected async saveNew(event: Event): Promise<void> {
     event.preventDefault();
-    const fields = this.read(true);
+    const fields = this.read();
     if (!fields) return;
-    const order = Math.max(0, ...(this.players() ?? []).map((p) => p.sort_order)) + 1;
-    if (await this.run(() => this.data.addPlayer(this.id(), fields, order))) this.adding.set(false);
+    let added: { id: string; token: string | null } | null = null;
+    const done = await this.run(async () => {
+      added = await this.data.addMember(this.id(), fields);
+    });
+    if (!done) return;
+    this.adding.set(false);
+    // No link to send when their email already had an account: they are on the trip already.
+    const invite = added as { id: string; token: string | null } | null;
+    if (invite?.token) await this.deliver(invite.id, fields.phone, this.inviteText(invite.token));
   }
 
   protected async saveEdit(event: Event, player: RosterPlayer): Promise<void> {
     event.preventDefault();
-    const fields = this.read(true);
+    const fields = this.read();
     if (!fields) return;
-    if (await this.run(() => this.data.updatePlayer(player.id, fields))) this.open.set(null);
+    if (await this.run(() => this.data.updateMember(player, fields))) this.open.set(null);
   }
 
-  protected async saveReplace(event: Event, player: RosterPlayer): Promise<void> {
-    event.preventDefault();
-    const fields = this.read(false);
-    if (!fields) return;
-    if (await this.run(() => this.data.replacePlayer(player.id, fields.name, fields.initials)))
-      this.open.set(null);
+  protected async remove(player: RosterPlayer): Promise<void> {
+    if (await this.run(() => this.data.removeMember(player.id))) this.closeSheet();
   }
 
-  protected async regenerate(player: RosterPlayer): Promise<void> {
-    if (await this.run(() => this.data.regenerateCode(player.id))) this.open.set(null);
-  }
-
-  protected async toggleCoAdmin(player: RosterPlayer): Promise<void> {
-    if (
-      await this.run(() =>
-        this.data.setRole(player.id, player.role === 'co_admin' ? 'player' : 'co_admin'),
-      )
-    )
-      this.open.set(null);
-  }
-
-  /** Marks this player as the organizer's own: on their sign-in, they are this player. */
-  protected async thisIsMe(player: RosterPlayer): Promise<void> {
-    const done = await this.run(async () =>
-      this.trip.set(await this.data.updateTrip(this.id(), { owner_player_id: player.id })),
-    );
-    if (done) this.open.set(null);
-  }
-
-  protected async createSpectator(): Promise<void> {
-    await this.run(() => this.data.issueSpectatorCode(this.id()));
-  }
-
-  protected async setSpectator(code: SpectatorCode, enabled: boolean): Promise<void> {
-    await this.run(() => this.data.setSpectatorEnabled(code.id, enabled));
-  }
-
-  /** Runs a change, then reloads the roster. Returns whether it worked. */
+  /** Runs a change, then reloads the people. Returns whether it worked. */
   private async run(change: () => Promise<unknown>): Promise<boolean> {
     this.busy.set(true);
     this.error.set(null);
@@ -518,7 +566,10 @@ export class Roster {
     } catch (e) {
       const message =
         e instanceof AdminError
-          ? e.message.replace('That is already in use', 'Another player already has that name')
+          ? e.message.replace(
+              'That is already in use',
+              'Someone on the trip already has that name or email',
+            )
           : "That didn't save.";
       if (this.adding() || this.mode() !== 'menu') this.formError.set(message);
       else this.error.set(message);
@@ -530,20 +581,23 @@ export class Roster {
 
   private async load(id: string, sendAll: boolean): Promise<void> {
     try {
-      this.trip.set(await this.data.trip(id));
+      const [trip, role] = await Promise.all([this.data.trip(id), this.data.tripRole(id)]);
+      this.trip.set(trip);
+      this.role.set(role);
       await this.reload(id);
-      if (sendAll && this.withCodes().length) this.sending.set(0);
+      if (sendAll && this.toInvite().length) this.sending.set(0);
+      if (trip.status !== 'draft') {
+        // The link is a convenience here: the page works without it.
+        this.spectator.set(await this.data.spectatorToken(id, 'get').catch(() => null));
+      }
     } catch (e) {
-      this.error.set(e instanceof AdminError ? e.message : "Couldn't load the roster.");
+      this.error.set(
+        e instanceof AdminError ? e.message : "Couldn't load the people on this trip.",
+      );
     }
   }
 
   private async reload(id: string): Promise<void> {
-    const [players, spectator] = await Promise.all([
-      this.data.roster(id),
-      this.owner() ? this.data.spectatorCode(id) : null,
-    ]);
-    this.players.set(players);
-    this.spectator.set(spectator);
+    this.players.set(await this.data.roster(id));
   }
 }

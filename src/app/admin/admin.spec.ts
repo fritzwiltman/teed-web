@@ -1,10 +1,10 @@
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { SessionService, TripSession } from '../core/session';
-import { AdminAuth } from './auth';
-import { AdminData, AdminError, RosterPlayer, Trip } from './data';
+import { AuthService, Me } from '../core/auth';
+import { MyTrip, SessionService } from '../core/session';
+import { AdminData, AdminError, RosterPlayer, Trip, TripCreator, TripRole } from './data';
 import { ADMIN_ROUTES } from './routes';
 import { slugFor } from './trip-details';
 
@@ -22,7 +22,6 @@ const VERO: Trip = {
   pickup_net_double: true,
   spectators_see_money: false,
   handicap_lock_date: null,
-  owner_player_id: null,
 };
 const PINES: Trip = {
   ...VERO,
@@ -33,102 +32,145 @@ const PINES: Trip = {
   end_date: '2026-10-12',
   status: 'final',
 };
+const LIVE: Trip = { ...VERO, id: 'live', status: 'live' };
 
+/** Someone on the roster, as the organizer and co-organizers get them. */
 const player = (over: Partial<RosterPlayer>): RosterPlayer => ({
   id: 'p1',
   name: 'Fritz',
   initials: 'FW',
   role: 'player',
   handicap_index: 18.6,
-  index_entered_at: '2027-01-01',
+  index_locked: false,
+  buy_in_paid: false,
   sort_order: 1,
-  code: 'K4M-9QT',
+  is_me: false,
+  email: 'fritz@example.com',
   phone: '+17725550101',
+  claimed: true,
+  invited_at: '2027-01-01',
+  flags: { no_email: false, not_claimed: false, not_paid: false },
   ...over,
 });
 
-const LIVE: Trip = { ...VERO, id: 'live', status: 'live', owner_player_id: 'p1' };
-
-/** Cal, a co-admin of the live trip, on the phone he logged in on with his code. */
-const CAL: TripSession = {
-  role: 'player',
-  via: 'code',
-  trip: {
-    id: 'live',
-    name: 'Vero Beach 2027',
-    slug: 'VERO',
-    status: 'live',
-    location: 'Vero Beach, FL',
-    start_date: '2027-01-11',
-    end_date: '2027-01-15',
-  },
-  player: { id: 'p3', name: 'Cal', initials: 'CM', role: 'co_admin' },
+/**
+ * Who is signed in:
+ *   admin      the app admin (also a trip creator), on none of these trips
+ *   organizer  the trips' organizer, and a trip creator
+ *   co         a co-organizer of the trips: not a trip creator
+ *   player     a player on the trips
+ *   nobody     signed out
+ */
+type Who = 'admin' | 'organizer' | 'co' | 'player' | 'nobody';
+const ROLE: Record<Who, TripRole | null> = {
+  admin: 'admin',
+  organizer: 'organizer',
+  co: 'co_organizer',
+  player: 'player',
+  nobody: null,
 };
 
-/**
- * Boots the organizer area at a URL. `who` is the email sign-in: an organizer, someone else, or
- * nobody. `session` is the phone's player login, if any (a co-admin gets in on theirs).
- */
+/** Boots the organizer area at a URL as that person. `data` replaces what the database answers. */
 async function boot(
   url: string,
-  who: 'organizer' | 'stranger' | 'nobody' = 'organizer',
+  who: Who = 'organizer',
   data: Partial<Record<keyof AdminData, unknown>> = {},
-  session: TripSession | null = null,
 ) {
-  const auth = {
-    email: signal(who === 'nobody' ? null : `${who}@example.com`),
-    isOrganizer: signal(who === 'organizer'),
-    ready: vi.fn(async () => {}),
-    send: vi.fn(async () => 'sent'),
-    signIn: vi.fn(async () => 'ok'),
-    setPassword: vi.fn(async () => true),
-    signOut: vi.fn(async () => {
-      auth.email.set(null);
-      auth.isOrganizer.set(false);
-    }),
-  };
+  const me = signal<Me | null>(
+    who === 'nobody'
+      ? null
+      : {
+          id: 'u1',
+          display_name: who === 'co' ? 'Cal' : 'Fritz',
+          email: `${who}@example.com`,
+          handicap_index: null,
+          is_admin: who === 'admin',
+          is_trip_creator: who === 'admin' || who === 'organizer',
+        },
+  );
   const api = {
+    tripRole: vi.fn(async () => ROLE[who]),
     trips: vi.fn(async () => [VERO, PINES, LIVE]),
     trip: vi.fn(async (id: string) => (id === 'pines' ? PINES : id === 'live' ? LIVE : VERO)),
     rounds: vi.fn(async () => []),
     roster: vi.fn(async () => [] as RosterPlayer[]),
-    player: vi.fn(async () => ({ id: 'p1', name: 'Fritz', initials: 'FW', role: 'player' })),
-    spectatorCode: vi.fn(async () => null),
     createTrip: vi.fn(async (fields: object) => ({ ...VERO, ...fields, id: 'new-trip' })),
     updateTrip: vi.fn(async (_id: string, fields: object) => ({ ...VERO, ...fields })),
-    addPlayer: vi.fn(async () => {}),
-    updatePlayer: vi.fn(async () => {}),
+    addMember: vi.fn(async () => ({ id: 'new-member', token: 'TOKEN-NEW' })),
+    updateMember: vi.fn(async () => {}),
+    removeMember: vi.fn(async () => {}),
+    invite: vi.fn(async () => 'TOKEN-AGAIN'),
+    spectatorToken: vi.fn(async () => null as string | null),
+    creators: vi.fn(async () => [] as TripCreator[]),
+    addCreator: vi.fn(async () => 'TOKEN-CREATOR'),
+    inviteCreator: vi.fn(async () => 'TOKEN-CREATOR-AGAIN'),
+    removeCreator: vi.fn(async () => {}),
     courses: vi.fn(async () => []),
     ...data,
   };
+  // The app admin is on none of the trips; everyone else is on all three.
+  const trips = signal(
+    who === 'admin' || who === 'nobody'
+      ? []
+      : ([{ id: 'vero' }, { id: 'pines' }, { id: 'live' }] as MyTrip[]),
+  );
+  const session = signal<{ trip: { id: string } } | null>(null);
   const sessions = {
-    session: signal(session),
-    enterAsOwner: vi.fn(),
+    trips,
+    session,
+    canManage: computed(() => false),
+    open: vi.fn(async (id: string) => trips().some((t) => t.id === id)),
   };
+  // Where a text goes: Messages for someone with a number, the share sheet otherwise.
+  const share = vi.fn(async (_data: { text: string }) => {});
+  Object.defineProperty(navigator, 'share', { configurable: true, value: share });
+  const original = window.location;
+  const sms = vi.fn();
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: {
+      origin: original.origin,
+      get href() {
+        return original.href;
+      },
+      set href(value: string) {
+        sms(value);
+      },
+    },
+  });
+
   TestBed.configureTestingModule({
     providers: [
       provideRouter(
         [
           { path: 'admin', children: ADMIN_ROUTES },
           { path: 'login', children: [] },
+          { path: 'you', children: [] },
           { path: 'home', children: [] },
         ],
         withComponentInputBinding(),
       ),
-      { provide: AdminAuth, useValue: auth },
+      { provide: AuthService, useValue: { me, ready: vi.fn(async () => {}) } },
       { provide: AdminData, useValue: api },
       { provide: SessionService, useValue: sessions },
     ],
   });
   const harness = await RouterTestingHarness.create(url);
   await harness.fixture.whenStable();
-  const settle = () => harness.fixture.whenStable();
+  const settle = async () => {
+    await new Promise((r) => setTimeout(r));
+    await harness.fixture.whenStable();
+  };
+  await settle();
   const page = () => harness.routeNativeElement as HTMLElement;
   const buttons = () =>
-    [...page().querySelectorAll<HTMLElement>('button, a')].map((b) => b.textContent?.trim());
+    [...page().querySelectorAll<HTMLElement>('button, a')].map(
+      (b) => b.querySelector('.title')?.textContent?.trim() || b.textContent?.trim(),
+    );
   const click = async (label: string) => {
     const target = [...page().querySelectorAll<HTMLElement>('button, a')].find(
-      (b) => b.textContent?.trim() === label,
+      (b) =>
+        b.textContent?.trim() === label || b.querySelector('.title')?.textContent?.trim() === label,
     );
     if (!target) throw new Error(`No button "${label}" in: ${page().textContent}`);
     target.click();
@@ -148,9 +190,35 @@ async function boot(
       .dispatchEvent(new Event('submit', { cancelable: true }));
     await settle();
   };
+  /** The text of the message handed to Messages. */
+  const texted = () => {
+    const link = sms.mock.calls.at(-1)?.[0] as string | undefined;
+    return link
+      ? { to: link.slice(4).split('?')[0], body: decodeURIComponent(link.split('body=')[1]) }
+      : null;
+  };
   const router = TestBed.inject(Router);
-  return { page, auth, api, sessions, router, buttons, click, type, submit, settle };
+  return {
+    page,
+    me,
+    api,
+    sessions,
+    router,
+    buttons,
+    click,
+    type,
+    submit,
+    settle,
+    share,
+    texted,
+    origin: original.origin,
+  };
 }
+
+const realLocation = window.location;
+afterEach(() =>
+  Object.defineProperty(window, 'location', { configurable: true, value: realLocation }),
+);
 
 const title = (page: HTMLElement) => page.querySelector('h1')?.textContent;
 const pill = (page: HTMLElement) => page.querySelector('ui-header-band .action');
@@ -161,97 +229,79 @@ const tabs = (page: HTMLElement) =>
 
 describe('organizer area', () => {
   describe('who gets in', () => {
-    it('sends someone who is not signed in to the sign-in screen', async () => {
-      const { router, page } = await boot('/admin', 'nobody');
-      expect(router.url).toBe('/admin/sign-in');
-      expect(title(page())).toBe('Organizer sign-in');
-    });
-
-    it('lets an organizer in', async () => {
-      const { router, page } = await boot('/admin');
-      expect(router.url).toBe('/admin');
-      expect(title(page())).toBe('My trips');
-    });
-
-    it('gives a signed-in non-organizer nothing but a way to sign out', async () => {
-      const { router, page, api, click, auth } = await boot('/admin/trips/vero/roster', 'stranger');
-      expect(router.url).toBe('/admin/sign-in');
-      expect(page().textContent).toContain("stranger@example.com isn't an organizer account");
-      expect(api.roster).not.toHaveBeenCalled();
-      await click('Sign out');
-      expect(auth.signOut).toHaveBeenCalled();
-    });
-
-    it("lets a co-admin into their own trip's screens on their code login", async () => {
-      const { router, page } = await boot('/admin/trips/live', 'nobody', {}, CAL);
-      expect(router.url).toBe('/admin/trips/live');
-      expect(title(page())).toBe('Overview');
-    });
-
-    it('keeps a co-admin out of other trips, My trips, new trips and the course library', async () => {
-      for (const url of ['/admin/trips/vero', '/admin', '/admin/trips/new', '/admin/courses']) {
-        const { router } = await boot(url, 'nobody', {}, CAL);
-        expect(router.url, url).toBe('/admin/sign-in');
+    it('sends someone who is not signed in to Sign in', async () => {
+      for (const url of [
+        '/admin',
+        '/admin/trips/vero',
+        '/admin/trips/new',
+        '/admin/courses',
+        '/admin/creators',
+      ]) {
+        expect((await boot(url, 'nobody')).router.url, url).toBe('/login');
         TestBed.resetTestingModule();
       }
     });
 
-    it('keeps an ordinary player out', async () => {
-      const player = { ...CAL, player: { ...CAL.player!, role: 'player' as const } };
-      const { router } = await boot('/admin/trips/live', 'nobody', {}, player);
-      expect(router.url).toBe('/admin/sign-in');
+    it("lets the organizer, a co-organizer and the app admin into a trip's screens", async () => {
+      for (const who of ['organizer', 'co', 'admin'] as const) {
+        const { router, page, api } = await boot('/admin/trips/vero', who);
+        expect(router.url, who).toBe('/admin/trips/vero');
+        expect(title(page())).toBe('Overview');
+        expect(api.tripRole).toHaveBeenCalledWith('vero');
+        TestBed.resetTestingModule();
+      }
     });
-  });
 
-  describe('sign-in', () => {
-    it('signs in with email and password', async () => {
-      const t = await boot('/admin/sign-in', 'nobody');
-      t.auth.signIn.mockImplementation(async () => {
-        t.auth.email.set('me@example.com');
-        t.auth.isOrganizer.set(true);
-        return 'ok';
+    it('keeps a player out, and anyone the trip is not theirs to see', async () => {
+      for (const url of [
+        '/admin/trips/vero',
+        '/admin/trips/vero/roster',
+        '/admin/trips/vero/details',
+      ]) {
+        expect((await boot(url, 'player')).router.url, url).toBe('/you');
+        TestBed.resetTestingModule();
+      }
+      const stranger = await boot('/admin/trips/vero', 'organizer', {
+        tripRole: vi.fn(async () => null),
       });
-      await t.type('#email', ' me@example.com ');
-      await t.type('#password', 'correct horse');
-      await t.submit();
-      expect(t.auth.signIn).toHaveBeenCalledWith('me@example.com', 'correct horse');
-      expect(t.router.url).toBe('/admin');
+      expect(stranger.router.url).toBe('/you');
     });
 
-    it('says so when the email and password do not match', async () => {
-      const t = await boot('/admin/sign-in', 'nobody');
-      t.auth.signIn.mockResolvedValue('wrong');
-      await t.type('#email', 'me@example.com');
-      await t.type('#password', 'nope');
-      await t.submit();
-      expect(t.page().querySelector('[role=alert]')?.textContent).toContain("don't match");
-      expect(t.router.url).toBe('/admin/sign-in');
+    it('with no signal, goes by the role saved with the open trip', async () => {
+      const offline = { tripRole: vi.fn(async () => Promise.reject(new AdminError('offline'))) };
+      expect((await boot('/admin/trips/vero', 'co', offline)).router.url).toBe('/you');
     });
 
-    it('emails a link instead, as the second option', async () => {
-      const t = await boot('/admin/sign-in', 'nobody');
-      await t.type('#email', 'me@example.com');
-      await t.click('Email me a link instead');
-      expect(t.auth.send).toHaveBeenCalledWith('me@example.com');
-      expect(t.auth.signIn).not.toHaveBeenCalled();
-      expect(t.page().textContent).toContain('Check me@example.com and tap the link');
+    it('keeps New trip and the course library for trip creators', async () => {
+      for (const url of ['/admin/trips/new', '/admin/courses']) {
+        expect((await boot(url, 'organizer')).router.url, url).toBe(url);
+        TestBed.resetTestingModule();
+        expect((await boot(url, 'co')).router.url, url).toBe('/you');
+        TestBed.resetTestingModule();
+      }
     });
 
-    it('says so when there have been too many tries', async () => {
-      const t = await boot('/admin/sign-in', 'nobody');
-      t.auth.send.mockResolvedValue('rate_limited');
-      await t.type('#email', 'me@example.com');
-      await t.click('Email me a link instead');
-      expect(t.page().querySelector('[role=alert]')?.textContent).toContain('Too many tries');
+    it('keeps All trips and Trip creators for the app admin', async () => {
+      for (const url of ['/admin', '/admin/creators']) {
+        expect((await boot(url, 'admin')).router.url, url).toBe(url);
+        TestBed.resetTestingModule();
+        expect((await boot(url, 'organizer')).router.url, url).toBe('/you');
+        TestBed.resetTestingModule();
+      }
+    });
+
+    it('sends the old organizer sign-in address to Sign in', async () => {
+      expect((await boot('/admin/sign-in', 'nobody')).router.url).toBe('/login');
     });
   });
 
   describe('tab bar', () => {
-    it('is not on My trips or the sign-in screen', async () => {
-      expect((await boot('/admin')).page().querySelector('ui-tab-bar')).toBeNull();
+    it('is not on All trips or Trip creators', async () => {
+      expect((await boot('/admin', 'admin')).page().querySelector('ui-tab-bar')).toBeNull();
       TestBed.resetTestingModule();
-      const signIn = await boot('/admin/sign-in', 'nobody');
-      expect(signIn.page().querySelector('ui-tab-bar')).toBeNull();
+      expect(
+        (await boot('/admin/creators', 'admin')).page().querySelector('ui-tab-bar'),
+      ).toBeNull();
     });
 
     it('has Overview, Rounds, People and Itinerary for the trip in hand', async () => {
@@ -274,8 +324,8 @@ describe('organizer area', () => {
       expect(tabs((await boot('/admin/trips/vero/rounds/new')).page())[1]).toBe('Rounds*');
     });
 
-    it('stays, with nothing lit, in the course library, and goes on My trips', async () => {
-      const t = await boot('/admin/trips/vero');
+    it('stays, with nothing lit, in the course library, and goes on All trips', async () => {
+      const t = await boot('/admin/trips/vero', 'admin');
       await t.click('Course library');
       expect(t.router.url).toBe('/admin/courses');
       expect(tabs(t.page())).toEqual(['Overview', 'Rounds', 'People', 'Itinerary']);
@@ -285,9 +335,9 @@ describe('organizer area', () => {
     });
   });
 
-  describe('header and mode switch', () => {
+  describe('header and Player view', () => {
     it('labels a trip\'s screens "Organizer · <trip name>"', async () => {
-      const { page } = await boot('/admin/trips/vero/roster');
+      const { page } = await boot('/admin/trips/live/roster');
       expect(page().querySelector('ui-header-band .label')?.textContent).toBe(
         'Organizer · Vero Beach 2027',
       );
@@ -298,34 +348,26 @@ describe('organizer area', () => {
       expect(pill((await boot('/admin/trips/vero')).page())).toBeNull();
     });
 
-    it('hides Player view when the owner has not said which player they are', async () => {
-      const trip = vi.fn(async () => ({ ...LIVE, owner_player_id: null }));
-      expect(pill((await boot('/admin/trips/live', 'organizer', { trip })).page())).toBeNull();
+    it("hides Player view from the app admin on a trip they aren't on", async () => {
+      expect(pill((await boot('/admin/trips/live', 'admin')).page())).toBeNull();
     });
 
-    it('Player view puts the owner in player mode as their own player, with no code', async () => {
-      const t = await boot('/admin/trips/live');
-      expect(pill(t.page())?.textContent).toBe('Player view');
-      await t.click('Player view');
-      expect(t.api.player).toHaveBeenCalledWith('p1');
-      expect(t.sessions.enterAsOwner).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'live', status: 'live', owner_player_id: 'p1' }),
-        expect.objectContaining({ id: 'p1', name: 'Fritz' }),
-      );
-      expect(t.router.url).toBe('/home');
-    });
-
-    it('Player view takes a co-admin back to the login they already have', async () => {
-      const t = await boot('/admin/trips/live', 'nobody', {}, CAL);
-      await t.click('Player view');
-      expect(t.sessions.enterAsOwner).not.toHaveBeenCalled();
-      expect(t.router.url).toBe('/home');
+    it('Player view opens the trip itself, for the organizer and a co-organizer alike', async () => {
+      for (const who of ['organizer', 'co'] as const) {
+        const t = await boot('/admin/trips/live', who);
+        expect(pill(t.page())?.textContent).toBe('Player view');
+        await t.click('Player view');
+        expect(t.sessions.open).toHaveBeenCalledWith('live');
+        expect(t.router.url).toBe('/home');
+        TestBed.resetTestingModule();
+      }
     });
   });
 
-  describe('My trips', () => {
-    it('lists upcoming trips with their status, and past trips as final', async () => {
-      const { page } = await boot('/admin');
+  describe('All trips (app admin)', () => {
+    it('lists every trip, upcoming with where it stands and past as final', async () => {
+      const { page } = await boot('/admin', 'admin');
+      expect(title(page())).toBe('All trips');
       const upcoming = page().querySelector('[aria-label=Upcoming]')!;
       const past = page().querySelector('[aria-label=Past]')!;
       expect(upcoming.textContent).toContain('Vero Beach 2027');
@@ -339,42 +381,17 @@ describe('organizer area', () => {
       expect(page().querySelector('a[ui-button]')?.textContent).toContain('New trip');
     });
 
-    it('opens a draft in organizer mode', async () => {
-      const t = await boot('/admin');
-      t.page().querySelector<HTMLElement>('[aria-label=Upcoming] button')!.click();
-      await t.settle();
-      expect(t.router.url).toBe('/admin/trips/vero');
-      expect(t.sessions.enterAsOwner).not.toHaveBeenCalled();
+    it("opens a trip on its organizer screens: the admin needn't be on it", async () => {
+      const t = await boot('/admin', 'admin');
+      await t.click('Southern Pines 2026');
+      expect(t.router.url).toBe('/admin/trips/pines');
+      expect(t.sessions.open).not.toHaveBeenCalled();
     });
 
-    it('opens a live trip in player mode, as the player marked "This is me"', async () => {
-      const t = await boot('/admin');
-      t.page().querySelectorAll<HTMLElement>('[aria-label=Upcoming] button')[1].click();
-      await t.settle();
-      expect(t.sessions.enterAsOwner).toHaveBeenCalled();
-      expect(t.router.url).toBe('/home');
-    });
-
-    it('opens a live trip in organizer mode when "This is me" is not set', async () => {
-      const t = await boot('/admin', 'organizer', {
-        trips: vi.fn(async () => [{ ...LIVE, owner_player_id: null }]),
-      });
-      t.page().querySelector<HTMLElement>('[aria-label=Upcoming] button')!.click();
-      await t.settle();
-      expect(t.sessions.enterAsOwner).not.toHaveBeenCalled();
-      expect(t.router.url).toBe('/admin/trips/live');
-    });
-
-    it('lets the organizer set a password', async () => {
-      const t = await boot('/admin');
-      await t.click('Set password');
-      await t.type('[name=new-password]', 'short');
-      await t.submit();
-      expect(t.page().querySelector('[role=alert]')?.textContent).toContain('at least 8');
-      await t.type('[name=new-password]', 'long enough now');
-      await t.submit();
-      expect(t.auth.setPassword).toHaveBeenCalledWith('long enough now');
-      expect(t.page().textContent).toContain('Password saved');
+    it('has no password or sign-out of its own: those live on You', async () => {
+      const { page, buttons } = await boot('/admin', 'admin');
+      expect(page().querySelector('input[type=password]')).toBeNull();
+      expect(buttons()).not.toContain('Sign out');
     });
   });
 
@@ -496,7 +513,7 @@ describe('organizer area', () => {
       expect(card.querySelector('a')?.getAttribute('href')).toBe('/admin/trips/vero/details');
     });
 
-    it('publishes only after a confirm step, then separately offers to text everyone their link', async () => {
+    it('publishes only after a confirm step, then separately offers to text everyone their invite', async () => {
       const t = await boot('/admin/trips/vero');
       await t.click('Publish');
       expect(t.api.updateTrip).not.toHaveBeenCalled();
@@ -510,8 +527,8 @@ describe('organizer area', () => {
       expect(t.router.url).toBe('/admin/trips/vero'); // not sent anywhere yet
       const sheet = t.page().querySelector('[role=dialog]')!;
       expect(sheet.querySelector('h2')?.textContent).toBe('Vero Beach 2027 is published');
-      expect(sheet.textContent).toContain('Text everyone their link now?');
-      await t.click('Text links');
+      expect(sheet.textContent).toContain('Text everyone their invite now?');
+      await t.click('Text invites');
       expect(t.router.url).toBe('/admin/trips/vero/roster?send=all');
     });
 
@@ -525,21 +542,28 @@ describe('organizer area', () => {
       expect(t.router.url).toBe('/admin/trips/vero');
     });
 
+    it('lets a co-organizer publish too', async () => {
+      const t = await boot('/admin/trips/vero', 'co');
+      await t.click('Publish');
+      t.page().querySelector<HTMLElement>('[role=dialog] button[ui-button]')!.click();
+      await t.settle();
+      expect(t.api.updateTrip).toHaveBeenCalledWith('vero', { status: 'live' });
+    });
+
     it('has no Publish for a trip that is published or finished', async () => {
       expect((await boot('/admin/trips/pines')).buttons()).not.toContain('Publish');
       TestBed.resetTestingModule();
       expect((await boot('/admin/trips/live')).buttons()).not.toContain('Publish');
     });
 
-    it('gives the organizer the course library and their other trips, but not a co-admin', async () => {
+    it('offers the course library to trip creators only, and the way back to You to everyone', async () => {
       const mine = await boot('/admin/trips/live');
-      expect(mine.buttons()).toEqual(expect.arrayContaining(['Course library', 'All trips']));
+      expect(mine.buttons()).toEqual(expect.arrayContaining(['Course library', 'All my trips']));
       TestBed.resetTestingModule();
-      const cal = await boot('/admin/trips/live', 'nobody', {}, CAL);
+      const cal = await boot('/admin/trips/live', 'co');
       expect(cal.buttons()).toContain('Trip details');
+      expect(cal.buttons()).toContain('All my trips');
       expect(cal.buttons()).not.toContain('Course library');
-      expect(cal.buttons()).not.toContain('All trips');
-      expect(cal.buttons()).not.toContain('Publish');
     });
   });
 
@@ -584,192 +608,335 @@ describe('organizer area', () => {
   });
 
   describe('People', () => {
-    const roster = [
-      player({}),
-      player({
-        id: 'p2',
-        name: 'Ben',
-        initials: 'BK',
-        code: 'Q2X7RD',
-        phone: null,
-        handicap_index: null,
-        index_entered_at: null,
-        sort_order: 2,
-        role: 'co_admin',
-      }),
-    ];
-    const withRoster = { roster: vi.fn(async () => roster) };
-    const rows = (page: HTMLElement) =>
-      [...page.querySelectorAll('[aria-label=Players] ui-list-row')].map(
-        (r) => r.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    const FRITZ = player({ role: 'organizer', is_me: true });
+    const VON = player({
+      id: 'p2',
+      name: 'Von',
+      initials: 'V',
+      role: 'co_organizer',
+      handicap_index: 8.1,
+      email: 'von@example.com',
+      phone: null,
+      sort_order: 2,
+    });
+    const MATT = player({
+      id: 'p3',
+      name: 'Matt',
+      initials: 'M',
+      handicap_index: 28.7,
+      email: 'matt@example.com',
+      sort_order: 3,
+      phone: '+17725550103',
+      claimed: false,
+      flags: { no_email: false, not_claimed: true, not_paid: true },
+    });
+    const CHARLIE = player({
+      id: 'p4',
+      name: 'Charlie',
+      initials: 'C',
+      handicap_index: null,
+      email: null,
+      phone: null,
+      sort_order: 4,
+      claimed: false,
+      flags: { no_email: true, not_claimed: true, not_paid: false },
+    });
+    const withRoster = { roster: vi.fn(async () => [FRITZ, VON, MATT, CHARLIE]) };
+    const row = (page: HTMLElement, name: string) =>
+      [...page.querySelectorAll('[aria-label=Players] ui-list-row')].find((r) =>
+        r.querySelector('.title')?.textContent?.trim().startsWith(name),
+      )!;
+    const inRow = (page: HTMLElement, name: string, label: string) =>
+      [...row(page, name).querySelectorAll<HTMLElement>('button')].find(
+        (b) => b.textContent?.trim() === label || b.getAttribute('aria-label') === label,
       );
-    const menu = async (t: Awaited<ReturnType<typeof boot>>, name: string) => {
-      t.page().querySelector<HTMLElement>(`[aria-label="More for ${name}"]`)!.click();
+    /** Opens someone's ⋯ menu and returns its buttons. */
+    async function menu(t: Awaited<ReturnType<typeof boot>>, name: string): Promise<string[]> {
+      inRow(t.page(), name, `More for ${name}`)!.click();
       await t.settle();
       return [...t.page().querySelectorAll('[role=dialog] button[ui-button]')].map((b) =>
-        b.textContent?.trim(),
+        b.textContent!.trim(),
       );
-    };
+    }
 
-    it('shows each player with code and index, and warns about an unconfirmed index', async () => {
-      const { page } = await boot('/admin/trips/vero/roster', 'organizer', withRoster);
-      const [fritz, ben] = rows(page());
-      expect(fritz).toContain('Fritz');
-      expect(fritz).toContain('K4M9QT · Index 18.6');
-      expect(fritz).not.toContain('not confirmed');
-      expect(fritz).toContain('Text link');
-      expect(ben).toContain('Ben');
-      expect(ben).toContain('Co-admin');
-      expect(ben).toContain('Index not confirmed');
+    it('shows everyone with their role and index, and the "!" flags from the data', async () => {
+      const { page } = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      const text = (name: string) => row(page(), name).textContent;
+      expect(row(page(), 'Fritz').querySelector('ui-chip')?.textContent).toBe('Organizer');
+      expect(row(page(), 'Von').querySelector('ui-chip')?.textContent).toBe('Co-organizer');
+      expect(row(page(), 'Matt').querySelector('ui-chip')).toBeNull();
+      expect(text('Fritz')).toContain('Index 18.6');
+      expect(text('Fritz')).not.toContain('yet');
+      expect(text('Matt')).toContain('Not joined yet');
+      expect(text('Matt')).toContain('Buy-in not paid');
+      expect(text('Charlie')).toContain('No email yet');
+      expect(text('Charlie')).not.toContain('Buy-in');
     });
 
-    it('Text link opens Messages with the join link, always on the production address', async () => {
-      const t = await boot('/admin/trips/vero/roster', 'organizer', withRoster);
-      const href = vi.fn();
-      const original = window.location;
-      Object.defineProperty(window, 'location', {
-        configurable: true,
-        value: {
-          ...original,
-          set href(value: string) {
-            href(value);
-          },
-        },
-      });
-      try {
-        t.page().querySelector<HTMLElement>('[aria-label=Players] button[ui-button]')!.click();
-        await t.settle();
-      } finally {
-        Object.defineProperty(window, 'location', { configurable: true, value: original });
-      }
-      const link = href.mock.calls[0][0] as string;
-      expect(link.startsWith('sms:+17725550101?&body=')).toBe(true);
-      expect(decodeURIComponent(link.split('body=')[1])).toBe(
-        `You’re in for Vero Beach 2027. Tap to open Teed: ${original.origin}/join/K4M9QT`,
-      );
+    it('offers "Text invite" only for people who have not joined', async () => {
+      const { page } = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      expect(inRow(page(), 'Fritz', 'Text invite')).toBeUndefined();
+      expect(inRow(page(), 'Von', 'Text invite')).toBeUndefined();
+      expect(inRow(page(), 'Matt', 'Text invite')).toBeTruthy();
+      expect(inRow(page(), 'Charlie', 'Text invite')).toBeTruthy();
     });
 
-    it('with no phone saved, Text link uses the share sheet', async () => {
-      const share = vi.fn(async () => {});
-      Object.defineProperty(navigator, 'share', { configurable: true, value: share });
-      const t = await boot('/admin/trips/vero/roster', 'organizer', withRoster);
-      t.page().querySelectorAll<HTMLElement>('[aria-label=Players] button[ui-button]')[2].click();
+    it('Text invite makes a fresh link and opens Messages with it, on the site in use', async () => {
+      const t = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      inRow(t.page(), 'Matt', 'Text invite')!.click();
       await t.settle();
-      expect(share).toHaveBeenCalledWith({
-        text: `You’re in for Vero Beach 2027. Tap to open Teed: ${location.origin}/join/Q2X7RD`,
+      expect(t.api.invite).toHaveBeenCalledWith('p3');
+      expect(t.texted()).toEqual({
+        to: '+17725550103',
+        body: `Fritz invited you to Vero Beach 2027 on Teed: ${t.origin}/invite/TOKEN-AGAIN`,
       });
     });
 
-    it('offers edit, replace, new code, co-admin and This is me from the ⋯ menu', async () => {
-      const t = await boot('/admin/trips/vero/roster', 'organizer', withRoster);
-      expect(await menu(t, 'Fritz')).toEqual([
-        'Edit',
-        'Replace player',
-        'New code',
-        'Make co-admin',
-        'This is me',
-      ]);
+    it('with no phone saved, Text invite uses the share sheet', async () => {
+      const t = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      inRow(t.page(), 'Charlie', 'Text invite')!.click();
+      await t.settle();
+      expect(t.share).toHaveBeenCalledWith({
+        text: `Fritz invited you to Vero Beach 2027 on Teed: ${t.origin}/invite/TOKEN-AGAIN`,
+      });
     });
 
-    it('"This is me" marks the player as the owner, and the row then says so', async () => {
-      const updateTrip = vi.fn(async () => ({ ...VERO, owner_player_id: 'p1' }));
-      const t = await boot('/admin/trips/vero/roster', 'organizer', { ...withRoster, updateTrip });
-      await menu(t, 'Fritz');
-      await t.click('This is me');
-      expect(updateTrip).toHaveBeenCalledWith('vero', { owner_player_id: 'p1' });
-      expect(rows(t.page())[0]).toContain('Owner');
-      expect(await menu(t, 'Fritz')).not.toContain('This is me');
-    });
-
-    it('adds a player, suggesting initials and tidying the phone number', async () => {
-      const t = await boot('/admin/trips/vero/roster', 'organizer', withRoster);
-      await t.click('Add player');
-      await t.type('[name=name]', 'Cal Morgan');
-      expect(t.page().querySelector<HTMLInputElement>('[name=initials]')!.value).toBe('CM');
+    it('adds a player with name, email and role, then texts the invite: "Save and text invite"', async () => {
+      const t = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      await t.click('Add a player');
+      await t.type('[name=name]', 'Ryan Hall');
+      expect(t.page().querySelector<HTMLInputElement>('[name=initials]')?.value).toBe('RH');
+      await t.type('[name=email]', ' Ryan@Example.com ');
       await t.type('[name=phone]', '(772) 555-0199');
-      await t.type('[name=index]', '12.4');
-      await t.submit();
-      expect(t.api.addPlayer).toHaveBeenCalledWith(
-        'vero',
-        { name: 'Cal Morgan', initials: 'CM', phone: '+17725550199', handicap_index: 12.4 },
-        3,
+      await t.type('[name=index]', '9.84');
+      await t.click('Co-organizer');
+      await t.click('Save and text invite');
+      expect(t.api.addMember).toHaveBeenCalledWith('live', {
+        name: 'Ryan Hall',
+        initials: 'RH',
+        email: 'ryan@example.com',
+        phone: '+17725550199',
+        handicap_index: 9.8,
+        role: 'co_organizer',
+      });
+      expect(t.texted()).toEqual({
+        to: '+17725550199',
+        body: `Fritz invited you to Vero Beach 2027 on Teed: ${t.origin}/invite/TOKEN-NEW`,
+      });
+    });
+
+    it('needs only a name to add someone, and sends no text when they are on the trip at once', async () => {
+      const t = await boot('/admin/trips/live/roster', 'organizer', {
+        ...withRoster,
+        addMember: vi.fn(async () => ({ id: 'new-member', token: null })),
+      });
+      await t.click('Add a player');
+      await t.type('[name=name]', 'Sean');
+      await t.click('Save and text invite');
+      expect(t.api.addMember).toHaveBeenCalledWith(
+        'live',
+        expect.objectContaining({
+          name: 'Sean',
+          email: null,
+          phone: null,
+          handicap_index: null,
+          role: 'player',
+        }),
       );
+      expect(t.texted()).toBeNull();
+      expect(t.share).not.toHaveBeenCalled();
     });
 
-    it('refuses a phone number that is not one', async () => {
-      const t = await boot('/admin/trips/vero/roster', 'organizer', withRoster);
-      await t.click('Add player');
-      await t.type('[name=name]', 'Cal');
-      await t.type('[name=phone]', '555');
-      await t.submit();
-      expect(t.page().querySelector('[role=alert]')?.textContent).toContain(
-        "doesn't look like a mobile number",
-      );
-      expect(t.api.addPlayer).not.toHaveBeenCalled();
+    it('checks the form before saving', async () => {
+      const t = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      await t.click('Add a player');
+      const problem = () => t.page().querySelector('[role=dialog] [role=alert]')?.textContent;
+      await t.click('Save and text invite');
+      expect(problem()).toContain('Enter a name');
+      await t.type('[name=name]', 'Sean');
+      await t.type('[name=email]', 'sean at example');
+      await t.click('Save and text invite');
+      expect(problem()).toContain('email address');
+      await t.type('[name=email]', '');
+      await t.type('[name=phone]', '12345');
+      await t.click('Save and text invite');
+      expect(problem()).toContain('mobile number');
+      expect(t.api.addMember).not.toHaveBeenCalled();
     });
 
-    it('steps through the players for "Text everyone their link"', async () => {
-      const t = await boot('/admin/trips/vero/roster?send=all', 'organizer', withRoster);
-      const panel = () =>
-        t
-          .page()
-          .querySelector('[aria-label="Text everyone their link"]')
-          ?.textContent?.replace(/\s+/g, ' ') ?? '';
-      expect(panel()).toContain('1 of 2');
-      expect(panel()).toContain('Text Fritz');
-      await t.click('Next');
-      expect(panel()).toContain('2 of 2');
-      expect(panel()).toContain('Share with Ben'); // no phone number: the share sheet
-      await t.click('Done');
-      expect(t.page().querySelector('[aria-label="Text everyone their link"]')).toBeNull();
-    });
-
-    it('offers to create the spectator link, then shows it with Share and an on/off switch', async () => {
-      const none = await boot('/admin/trips/vero/roster', 'organizer', withRoster);
-      expect(none.page().querySelector('[aria-label=Spectators]')?.textContent).toContain(
-        'Create spectator link',
+    it('edits someone, with the email fixed once they have signed in', async () => {
+      const t = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      expect(await menu(t, 'Matt')).toEqual(['Edit', 'Remove from trip']);
+      await t.click('Edit');
+      expect(t.page().querySelector<HTMLInputElement>('[name=email]')?.disabled).toBe(false);
+      await t.type('[name=index]', '27.3');
+      await t.click('Save');
+      expect(t.api.updateMember).toHaveBeenCalledWith(
+        MATT,
+        expect.objectContaining({ name: 'Matt', handicap_index: 27.3 }),
       );
       TestBed.resetTestingModule();
-      const some = await boot('/admin/trips/vero/roster', 'organizer', {
-        ...withRoster,
-        spectatorCode: vi.fn(async () => ({ id: 's1', code: 'W7Q-3DX', enabled: true })),
-      });
-      const card = some.page().querySelector('[aria-label=Spectators]')!;
-      expect(card.textContent).toContain('W7Q3DX');
-      expect(card.textContent).toContain('Share link');
-      expect(card.querySelector('[role=switch]')?.getAttribute('aria-checked')).toBe('true');
+
+      const joined = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      await menu(joined, 'Von');
+      await joined.click('Edit');
+      expect(joined.page().querySelector<HTMLInputElement>('[name=email]')?.disabled).toBe(true);
     });
 
-    describe('for a co-admin', () => {
-      // What the database gives a co-admin: the roster, with no codes or phone numbers.
-      const seen = {
-        roster: vi.fn(async () => roster.map((p) => ({ ...p, code: null, phone: null }))),
-      };
+    it('removes a player only after a confirm step that says what goes', async () => {
+      const t = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      await menu(t, 'Charlie');
+      await t.click('Remove from trip');
+      expect(t.api.removeMember).not.toHaveBeenCalled();
+      const sheet = t.page().querySelector('[role=dialog]')!;
+      expect(sheet.querySelector('h2')?.textContent).toBe('Remove Charlie?');
+      expect(sheet.textContent).toContain('out of every group');
+      await t.click('Remove Charlie');
+      expect(t.api.removeMember).toHaveBeenCalledWith('p4');
+      expect(t.page().querySelector('[role=dialog]')).toBeNull();
+    });
 
-      it('hides what the database denies: codes, links, adding players, the spectator link', async () => {
-        const t = await boot('/admin/trips/live/roster', 'nobody', seen, CAL);
-        expect(rows(t.page())[0]).toContain('Fritz');
-        expect(rows(t.page())[0]).toContain('Index 18.6');
-        expect(t.page().textContent).not.toContain('K4M9QT');
-        expect(t.buttons()).not.toContain('Text link');
-        expect(t.buttons()).not.toContain('Text everyone their link');
-        expect(t.buttons()).not.toContain('Add player');
-        expect(t.page().querySelector('[aria-label=Spectators]')).toBeNull();
-        expect(t.api.spectatorCode).not.toHaveBeenCalled();
+    it('never offers to remove the organizer or change their role', async () => {
+      const t = await boot('/admin/trips/live/roster', 'organizer', withRoster);
+      expect(await menu(t, 'Fritz')).toEqual(['Edit']);
+      await t.click('Edit');
+      expect(t.page().querySelector('[role=dialog] ui-segmented')).toBeNull();
+    });
+
+    it('steps through the people who have not joined for "Text everyone their invite"', async () => {
+      const t = await boot('/admin/trips/live/roster?send=all', 'organizer', withRoster);
+      const card = () => t.page().querySelector('[aria-label="Text everyone their invite"]');
+      expect(card()?.textContent).toContain('1 of 2');
+      expect(card()?.textContent).toContain('Text Matt');
+      await t.click('Text Matt');
+      expect(t.api.invite).toHaveBeenCalledWith('p3');
+      await t.click('Next');
+      expect(card()?.textContent).toContain('2 of 2');
+      expect(card()?.textContent).toContain('Share with Charlie');
+      await t.click('Done');
+      expect(card()).toBeNull();
+    });
+
+    it('creates the spectator link, shares it, and resets it only after a confirm step', async () => {
+      const spectatorToken = vi.fn(async (_id: string, action: string) =>
+        action === 'reset' ? 'SPEC-1' : null,
+      );
+      const t = await boot('/admin/trips/live/roster', 'organizer', {
+        ...withRoster,
+        spectatorToken,
+      });
+      const card = () => t.page().querySelector('[aria-label=Spectators]')!;
+      expect(spectatorToken).toHaveBeenCalledWith('live', 'get');
+      expect(card().textContent).toContain('Create spectator link');
+      await t.click('Create spectator link');
+      expect(spectatorToken).toHaveBeenCalledWith('live', 'reset');
+
+      await t.click('Share link');
+      expect(t.share).toHaveBeenCalledWith({
+        text: `Follow Vero Beach 2027. Tap to open Teed: ${t.origin}/watch/SPEC-1`,
       });
 
-      it('keeps what they are allowed: editing a player, without the phone number', async () => {
-        const t = await boot('/admin/trips/live/roster', 'nobody', seen, CAL);
-        expect(await menu(t, 'Fritz')).toEqual(['Edit']);
+      spectatorToken.mockClear();
+      await t.click('Reset');
+      expect(spectatorToken).not.toHaveBeenCalled();
+      expect(t.page().querySelector('[role=dialog]')?.textContent).toContain('stops working');
+      await t.click('Reset link');
+      expect(spectatorToken).toHaveBeenCalledWith('live', 'reset');
+    });
+
+    it('has no spectator link while the trip is a draft', async () => {
+      const t = await boot('/admin/trips/vero/roster', 'organizer', withRoster);
+      expect(t.page().querySelector('[aria-label=Spectators]')).toBeNull();
+      expect(t.api.spectatorToken).not.toHaveBeenCalled();
+    });
+
+    describe('for a co-organizer', () => {
+      it('keeps what they are allowed: inviting, adding and removing players, the spectator link', async () => {
+        const t = await boot('/admin/trips/live/roster', 'co', withRoster);
+        expect(inRow(t.page(), 'Matt', 'Text invite')).toBeTruthy();
+        expect(t.buttons()).toContain('Add a player');
+        expect(t.buttons()).toContain('Create spectator link');
+        expect(await menu(t, 'Matt')).toEqual(['Edit', 'Remove from trip']);
+      });
+
+      it('hides what the database denies: choosing co-organizers and removing them', async () => {
+        const t = await boot('/admin/trips/live/roster', 'co', withRoster);
+        expect(await menu(t, 'Von')).toEqual(['Edit']);
         await t.click('Edit');
-        expect(t.page().querySelector('[name=phone]')).toBeNull();
-        await t.type('[name=index]', '17.2');
-        await t.submit();
-        expect(t.api.updatePlayer).toHaveBeenCalledWith(
-          'p1',
-          expect.objectContaining({ name: 'Fritz', handicap_index: 17.2 }),
-        );
+        expect(t.page().querySelector('[role=dialog] ui-segmented')).toBeNull();
+        TestBed.resetTestingModule();
+
+        const adding = await boot('/admin/trips/live/roster', 'co', withRoster);
+        await adding.click('Add a player');
+        expect(adding.page().querySelector('[role=dialog] ui-segmented')).toBeNull();
       });
+    });
+
+    it('gives the app admin, on a trip they are not on, everything the organizer has', async () => {
+      const t = await boot('/admin/trips/live/roster', 'admin', withRoster);
+      expect(await menu(t, 'Von')).toEqual(['Edit', 'Remove from trip']);
+      await t.click('Edit');
+      expect(t.page().querySelector('[role=dialog] ui-segmented')).toBeTruthy();
+    });
+
+    it('is read-only on a final trip', async () => {
+      const t = await boot('/admin/trips/pines/roster', 'organizer', withRoster);
+      expect(t.buttons()).not.toContain('Add a player');
+      expect(inRow(t.page(), 'Matt', 'Text invite')).toBeUndefined();
+      expect(inRow(t.page(), 'Matt', 'More for Matt')).toBeUndefined();
+    });
+  });
+
+  describe('Trip creators (app admin)', () => {
+    const CREATORS: TripCreator[] = [
+      {
+        id: 'c1',
+        name: 'Charlie',
+        phone: '+14125550100',
+        claimed_at: '2026-11-01',
+        email: 'charlie@example.com',
+      },
+      { id: 'c2', name: 'Brendan', phone: '+14125550148', claimed_at: null, email: null },
+    ];
+    const withCreators = { creators: vi.fn(async () => CREATORS) };
+
+    it('lists who may create trips: their email once signed in, the invited number until then', async () => {
+      const { page } = await boot('/admin/creators', 'admin', withCreators);
+      const rows = [...page().querySelectorAll('[aria-label="Trip creators"] ui-list-row')];
+      expect(rows.map((r) => r.querySelector('.title')?.textContent?.trim())).toEqual([
+        'Charlie',
+        'Brendan',
+      ]);
+      expect(rows[0].textContent).toContain('charlie@example.com');
+      expect(rows[0].textContent).not.toContain('Text invite');
+      expect(rows[1].textContent).toContain('(412) 555-0148');
+      expect(rows[1].textContent).toContain('Text invite');
+    });
+
+    it('adds someone by name and phone, and texts them the invite to plan trips', async () => {
+      const t = await boot('/admin/creators', 'admin', withCreators);
+      await t.click('Add a trip creator');
+      await t.type('[name=name]', 'Brendan');
+      await t.type('[name=phone]', '(412) 555-0148');
+      await t.click('Text Brendan an invite');
+      expect(t.api.addCreator).toHaveBeenCalledWith('Brendan', '+14125550148');
+      expect(t.texted()).toEqual({
+        to: '+14125550148',
+        body: `Fritz invited you to plan golf trips on Teed: ${t.origin}/invite/TOKEN-CREATOR`,
+      });
+    });
+
+    it('texts a fresh invite to someone who has not signed in yet, and removes people', async () => {
+      const t = await boot('/admin/creators', 'admin', withCreators);
+      await t.click('Text invite');
+      expect(t.api.inviteCreator).toHaveBeenCalledWith('c2');
+      expect(t.texted()?.body).toContain('/invite/TOKEN-CREATOR-AGAIN');
+      const remove = [...t.page().querySelectorAll<HTMLElement>('button')].filter(
+        (b) => b.textContent?.trim() === 'Remove',
+      );
+      remove[0].click();
+      await t.settle();
+      expect(t.api.removeCreator).toHaveBeenCalledWith('c1');
     });
   });
 });

@@ -53,8 +53,8 @@ export function slugFor(name: string, clash = false): string {
   template: `
     <ui-header-band
       [title]="id() ? 'Trip details' : 'New trip'"
-      [back]="id() ? ['/admin/trips', id()] : ['/admin']"
-      [backLabel]="id() ? 'Overview' : 'My trips'"
+      [back]="id() ? ['/admin/trips', id()] : ['/you']"
+      [backLabel]="id() ? 'Overview' : 'You'"
     />
     <main class="content">
       <form class="stack form" (submit)="save($event)" novalidate>
@@ -285,7 +285,7 @@ export class TripDetails {
 
   private async load(id: string): Promise<void> {
     try {
-      const { id: _id, status, owner_player_id: _owner, ...fields } = await this.data.trip(id);
+      const { id: _id, status, ...fields } = await this.data.trip(id);
       this.f.set(fields);
       this.percent.set(String(Math.round(fields.handicap_allowance * 100)));
       this.status.set(status);

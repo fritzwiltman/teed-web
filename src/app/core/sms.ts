@@ -1,22 +1,41 @@
-// Texting a player their join link.
+// Texting people their links.
 
-/** The link that logs a phone straight in, on the site the organizer has open. */
-export function joinLink(code: string, url: string = location.origin): string {
-  return `${url}/join/${encodeURIComponent(code.replace(/[^A-Za-z0-9]/g, '').toUpperCase())}`;
+/** The link that takes someone to their invite, on the site the sender has open. */
+export function inviteLink(token: string, url: string = location.origin): string {
+  return `${url}/invite/${encodeURIComponent(token)}`;
 }
 
-/** The text a player gets. */
-export function linkMessage(trip: string, code: string, url: string = location.origin): string {
-  return `You’re in for ${trip}. Tap to open Teed: ${joinLink(code, url)}`;
+/** The text a player gets: "Fritz invited you to Vero Beach 2027 on Teed: <link>". */
+export function inviteMessage(
+  inviter: string,
+  trip: string,
+  token: string,
+  url: string = location.origin,
+): string {
+  return `${inviter ? inviter + ' invited you' : "You're invited"} to ${trip} on Teed: ${inviteLink(token, url)}`;
+}
+
+/** The text someone gets who may now create trips. */
+export function creatorInviteMessage(
+  inviter: string,
+  token: string,
+  url: string = location.origin,
+): string {
+  return `${inviter ? inviter + ' invited you' : "You're invited"} to plan golf trips on Teed: ${inviteLink(token, url)}`;
+}
+
+/** The link for people following along without an account. */
+export function spectatorLink(token: string, url: string = location.origin): string {
+  return `${url}/watch/${encodeURIComponent(token)}`;
 }
 
 /** The text for sharing the spectator link. */
 export function spectatorMessage(
   trip: string,
-  code: string,
+  token: string,
   url: string = location.origin,
 ): string {
-  return `Follow ${trip}. Tap to open Teed: ${joinLink(code, url)}`;
+  return `Follow ${trip}. Tap to open Teed: ${spectatorLink(token, url)}`;
 }
 
 /**
@@ -39,9 +58,12 @@ export function formatPhone(phone: string): string {
   return us ? `(${us[1]}) ${us[2]}-${us[3]}` : phone;
 }
 
-/** Opens the phone's Messages app with the number and text filled in ("?&" suits both iOS and Android). */
-export function smsLink(phone: string, body: string): string {
-  return `sms:${phone}?&body=${encodeURIComponent(body)}`;
+/**
+ * Opens the phone's Messages app with the text filled in, and the number too when there is one
+ * ("?&" suits both iOS and Android).
+ */
+export function smsLink(phone: string | null, body: string): string {
+  return `sms:${phone ?? ''}?&body=${encodeURIComponent(body)}`;
 }
 
 /** Initials from a name: 'Fritz Wiltman' → 'FW', 'Von' → 'V'. */
@@ -52,4 +74,28 @@ export function initialsFor(name: string): string {
     .join('')
     .toUpperCase()
     .slice(0, 4);
+}
+
+/**
+ * Sends a text: to the person's number in Messages when we have it, else through the phone's
+ * share sheet, else onto the clipboard. Returns how it went.
+ */
+export async function sendText(
+  phone: string | null,
+  message: string,
+): Promise<'opened' | 'copied' | 'cancelled'> {
+  if (phone) {
+    location.href = smsLink(phone, message);
+    return 'opened';
+  }
+  try {
+    if (typeof navigator.share === 'function') {
+      await navigator.share({ text: message });
+      return 'opened';
+    }
+    await navigator.clipboard.writeText(message);
+    return 'copied';
+  } catch {
+    return 'cancelled'; // they closed the share sheet
+  }
 }

@@ -1,7 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { PlayerInfo } from '../core/session';
-import { ADMIN_SUPABASE, SUPABASE } from '../core/supabase';
-import { AdminAuth } from './auth';
+import { Role } from '../core/session';
+import { SUPABASE } from '../core/supabase';
 import { CourseDraft, TeeDraft } from './opengolf';
 import { ScoredGroup, hasScores } from '../core/round';
 
@@ -21,11 +20,10 @@ export interface Trip {
   pickup_net_double: boolean;
   spectators_see_money: boolean;
   handicap_lock_date: string | null;
-  owner_player_id: string | null;
 }
 
 /** The fields the Trip details form edits. */
-export type TripFields = Omit<Trip, 'id' | 'status' | 'owner_player_id'>;
+export type TripFields = Omit<Trip, 'id' | 'status'>;
 
 export interface RoundSummary {
   id: string;
@@ -39,22 +37,37 @@ export interface RoundSummary {
   scored: boolean;
 }
 
+/** Someone on a trip, as trip_roster() gives them. */
 export interface RosterPlayer {
   id: string;
   name: string;
   initials: string;
-  role: 'player' | 'co_admin';
+  role: Role;
   handicap_index: number | null;
-  index_entered_at: string | null;
+  index_locked: boolean;
+  buy_in_paid: boolean;
   sort_order: number;
-  code: string | null;
-  phone: string | null;
+  is_me: boolean;
+  // The rest comes only to the organizer, co-organizers and the app admin.
+  email?: string | null;
+  phone?: string | null;
+  /** Has signed in and taken their place. */
+  claimed?: boolean;
+  invited_at?: string | null;
+  /** The "!" flags, from the data. */
+  flags?: { no_email: boolean; not_claimed: boolean; not_paid: boolean };
 }
 
-export interface SpectatorCode {
+/** What the caller is on a trip: 'admin' is the app admin on a trip they aren't a member of. */
+export type TripRole = Role | 'admin';
+
+/** Someone who may create trips, or has been invited to. */
+export interface TripCreator {
   id: string;
-  code: string;
-  enabled: boolean;
+  name: string;
+  phone: string | null;
+  claimed_at: string | null;
+  email: string | null;
 }
 
 export interface CourseSummary {
@@ -67,7 +80,7 @@ export interface CourseSummary {
 }
 
 const TRIP_COLUMNS =
-  'id, name, slug, location, start_date, end_date, status, theme, handicap_allowance, strokes_off_low, pickup_net_double, spectators_see_money, handicap_lock_date, owner_player_id';
+  'id, name, slug, location, start_date, end_date, status, theme, handicap_allowance, strokes_off_low, pickup_net_double, spectators_see_money, handicap_lock_date';
 const COURSE_COLUMNS =
   'id, name, short_name, location, architect, year_opened, description, website_url, scorecard_url, directions_url, photo_path, source, source_ref, ratings_checked_at';
 const PHOTO_BUCKET = 'course-photos';
@@ -85,17 +98,18 @@ function fail(error: { message: string; code?: string } | null, fallback: string
 
 /**
  * Everything the organizer screens read and write. All of it goes through RLS as whoever is
- * using them: the organizer on their email sign-in, or a co-admin on the sign-in their code gave
- * them (the database then allows a co-admin only what a co-admin may do).
+ * signed in: the database allows an organizer, a co-organizer and the app admin each what they
+ * may do, and the screens hide the rest.
  */
 @Injectable({ providedIn: 'root' })
 export class AdminData {
-  private readonly auth = inject(AdminAuth);
-  private readonly organizerDb = inject(ADMIN_SUPABASE);
-  private readonly playerDb = inject(SUPABASE);
+  private readonly db = inject(SUPABASE);
 
-  private get db() {
-    return this.auth.isOrganizer() ? this.organizerDb : this.playerDb;
+  /** What the signed-in person is on this trip, or null when it isn't theirs to see. */
+  async tripRole(tripId: string): Promise<TripRole | null> {
+    const { data, error } = await this.db.rpc('trip_role', { p_trip_id: tripId });
+    if (error) fail(error, "Couldn't load that trip.");
+    return (data as TripRole | null) ?? null;
   }
 
   // ── Trips ──────────────────────────────────────────────────────────────────
@@ -119,19 +133,27 @@ export class AdminData {
     return data as Trip;
   }
 
+  /** Creates the trip (the creator becomes its organizer), then fills in the rest of its details. */
   async createTrip(fields: TripFields): Promise<Trip> {
-    const { data, error } = await this.db
-      .from('trips')
-      .insert(fields)
-      .select(TRIP_COLUMNS)
-      .single();
+    const { data, error } = await this.db.rpc('create_trip', {
+      p_name: fields.name,
+      p_slug: fields.slug,
+      p_location: fields.location,
+      p_start_date: fields.start_date,
+      p_end_date: fields.end_date,
+    });
     if (error) fail(error, "Couldn't create the trip.");
-    return data as Trip;
+    return this.updateTrip(data as string, fields);
+  }
+
+  async deleteTrip(id: string): Promise<void> {
+    const { data, error } = await this.db.from('trips').delete().eq('id', id).select('id');
+    if (error || !data?.length) fail(error, "Couldn't delete the trip.");
   }
 
   async updateTrip(
     id: string,
-    fields: Partial<TripFields> & { status?: TripStatus; owner_player_id?: string | null },
+    fields: Partial<TripFields> & { status?: TripStatus },
   ): Promise<Trip> {
     const { data, error } = await this.db
       .from('trips')
@@ -160,130 +182,124 @@ export class AdminData {
     );
   }
 
-  // ── Roster ─────────────────────────────────────────────────────────────────
+  // ── People ─────────────────────────────────────────────────────────────────
 
   async roster(tripId: string): Promise<RosterPlayer[]> {
-    const { data, error } = await this.db
-      .from('players')
-      .select(
-        'id, name, initials, role, handicap_index, index_entered_at, sort_order, player_codes(code), player_contacts(phone)',
-      )
-      .eq('trip_id', tripId)
-      .order('sort_order')
-      .order('name');
-    if (error) fail(error, "Couldn't load the roster.");
-    // player_codes and player_contacts are one-to-one, which comes back as an object (or an array on older servers).
-    const one = <T>(value: T | T[] | null): T | null =>
-      Array.isArray(value) ? (value[0] ?? null) : value;
-    return (
-      data as unknown as (RosterPlayer & { player_codes: unknown; player_contacts: unknown })[]
-    ).map((row) => ({
-      id: row.id,
-      name: row.name,
-      initials: row.initials,
-      role: row.role,
-      handicap_index: row.handicap_index,
-      index_entered_at: row.index_entered_at,
-      sort_order: row.sort_order,
-      code: one(row.player_codes as { code: string } | null)?.code ?? null,
-      phone: one(row.player_contacts as { phone: string } | null)?.phone ?? null,
-    }));
+    const { data, error } = await this.db.rpc('trip_roster', { p_trip_id: tripId });
+    if (error) fail(error, "Couldn't load the people on this trip.");
+    return data as RosterPlayer[];
   }
 
-  /** One player, as the player screens know them. */
-  async player(id: string): Promise<PlayerInfo> {
-    const { data, error } = await this.db
-      .from('players')
-      .select('id, name, initials, role')
-      .eq('id', id)
-      .maybeSingle();
-    if (error || !data) fail(error, "Couldn't load that player.");
-    return data as PlayerInfo;
+  /**
+   * Adds someone to the trip. `token` is for their invite link; it is null when their email
+   * already has an account, because then they are on the trip at once.
+   */
+  async addMember(
+    tripId: string,
+    member: MemberFields,
+  ): Promise<{ id: string; token: string | null }> {
+    const { data, error } = await this.db.rpc('add_member', {
+      p_trip_id: tripId,
+      p_name: member.name,
+      p_email: member.email,
+      p_role: member.role === 'co_organizer' ? 'co_organizer' : 'player',
+      p_handicap_index: member.handicap_index,
+      p_initials: member.initials,
+    });
+    if (error) fail(error, "Couldn't add them.");
+    const added = data as { id: string; token: string | null };
+    if (member.phone) await this.setPhone(added.id, member.phone);
+    return added;
   }
 
-  /** Adds a player and issues their code. */
-  async addPlayer(tripId: string, player: PlayerFields, sortOrder: number): Promise<void> {
-    const { data, error } = await this.db
-      .from('players')
-      .insert({
-        trip_id: tripId,
-        name: player.name,
-        initials: player.initials,
-        handicap_index: player.handicap_index,
-        sort_order: sortOrder,
-      })
-      .select('id')
-      .single();
-    if (error) fail(error, "Couldn't add the player.");
-    const id = (data as { id: string }).id;
-    await this.regenerateCode(id);
-    await this.setPhone(id, player.phone);
+  /** Saves what changed about someone. Their role and index go through the database's own rules. */
+  async updateMember(current: RosterPlayer, member: MemberFields): Promise<void> {
+    const row: Record<string, unknown> = { name: member.name, initials: member.initials };
+    // Once someone has signed in, their email is the one they sign in with.
+    if (!current.claimed && member.email !== (current.email ?? null)) row['email'] = member.email;
+    const { error } = await this.db.from('trip_members').update(row).eq('id', current.id);
+    if (error) fail(error, "Couldn't save that.");
+
+    if (member.handicap_index !== current.handicap_index) {
+      const { error: indexError } = await this.db.rpc('set_member_index', {
+        p_member_id: current.id,
+        p_handicap_index: member.handicap_index,
+      });
+      if (indexError) fail(indexError, "Couldn't save the handicap index.");
+    }
+    if (member.phone !== (current.phone ?? null)) await this.setPhone(current.id, member.phone);
+    if (member.role !== current.role && current.role !== 'organizer' && member.role !== 'organizer')
+      await this.setRole(current.id, member.role);
   }
 
-  async updatePlayer(id: string, player: PlayerFields): Promise<void> {
-    const { error } = await this.db
-      .from('players')
-      .update({
-        name: player.name,
-        initials: player.initials,
-        handicap_index: player.handicap_index,
-      })
-      .eq('id', id);
-    if (error) fail(error, "Couldn't save the player.");
-    // Phone numbers are the owner's alone.
-    if (this.auth.isOrganizer()) await this.setPhone(id, player.phone);
-  }
-
-  async setRole(id: string, role: 'player' | 'co_admin'): Promise<void> {
-    const { error } = await this.db.from('players').update({ role }).eq('id', id);
+  /** Player ↔ co-organizer. The organizer only. */
+  async setRole(id: string, role: 'player' | 'co_organizer'): Promise<void> {
+    const { error } = await this.db.rpc('set_member_role', { p_member_id: id, p_role: role });
     if (error) fail(error, "Couldn't change the role.");
   }
 
-  async regenerateCode(playerId: string): Promise<string> {
-    const { data, error } = await this.db.rpc('regenerate_player_code', { p_player_id: playerId });
-    if (error) fail(error, "Couldn't issue a code.");
+  /** A fresh invite link for someone who hasn't joined. The link sent before stops working. */
+  async invite(memberId: string): Promise<string> {
+    const { data, error } = await this.db.rpc('invite_member', { p_member_id: memberId });
+    if (error) fail(error, "Couldn't make the invite link.");
     return data as string;
   }
 
-  async replacePlayer(playerId: string, name: string, initials: string): Promise<string> {
-    const { data, error } = await this.db.rpc('replace_player', {
-      p_player_id: playerId,
-      p_name: name,
-      p_initials: initials,
-    });
-    if (error) fail(error, "Couldn't replace the player.");
-    return data as string;
+  async removeMember(id: string): Promise<void> {
+    const { data, error } = await this.db.from('trip_members').delete().eq('id', id).select('id');
+    if (error || !data?.length) fail(error, "Couldn't remove them.");
   }
 
-  private async setPhone(playerId: string, phone: string | null): Promise<void> {
+  private async setPhone(memberId: string, phone: string | null): Promise<void> {
     const { error } = phone
       ? await this.db
-          .from('player_contacts')
-          .upsert({ player_id: playerId, phone, updated_at: new Date().toISOString() })
-      : await this.db.from('player_contacts').delete().eq('player_id', playerId);
+          .from('member_contacts')
+          .upsert({ player_id: memberId, phone, updated_at: new Date().toISOString() })
+      : await this.db.from('member_contacts').delete().eq('player_id', memberId);
     if (error) fail(error, "Couldn't save the phone number.");
   }
 
-  async spectatorCode(tripId: string): Promise<SpectatorCode | null> {
+  /**
+   * The trip's spectator link token: 'get' for the current one (null if none has been made),
+   * 'reset' to make one or replace it, which stops the old link.
+   */
+  async spectatorToken(tripId: string, action: 'get' | 'reset'): Promise<string | null> {
+    const { data, error } = await this.db.functions.invoke('spectator-link', {
+      body: { trip_id: tripId, action },
+    });
+    if (error) fail(null, "Couldn't get the spectator link.");
+    return (data as { token: string | null }).token;
+  }
+
+  // ── Trip creators (app admin) ──────────────────────────────────────────────
+
+  async creators(): Promise<TripCreator[]> {
     const { data, error } = await this.db
-      .from('spectator_codes')
-      .select('id, code, enabled')
-      .eq('trip_id', tripId)
-      .order('created_at')
-      .limit(1)
-      .maybeSingle();
-    if (error) fail(error, "Couldn't load the spectator code.");
-    return data as SpectatorCode | null;
+      .from('trip_creators')
+      .select('id, name, phone, claimed_at, profiles!trip_creators_profile_id_fkey(email)')
+      .order('created_at');
+    if (error) fail(error, "Couldn't load the trip creators.");
+    return (data as unknown as (TripCreator & { profiles: { email: string } | null })[]).map(
+      ({ profiles, ...creator }) => ({ ...creator, email: profiles?.email ?? null }),
+    );
   }
 
-  async issueSpectatorCode(tripId: string): Promise<void> {
-    const { error } = await this.db.rpc('issue_spectator_code', { p_trip_id: tripId });
-    if (error) fail(error, "Couldn't issue a spectator code.");
+  /** Adds someone who may create trips. Returns the token for their invite link. */
+  async addCreator(name: string, phone: string | null): Promise<string> {
+    const { data, error } = await this.db.rpc('add_trip_creator', { p_name: name, p_phone: phone });
+    if (error) fail(error, "Couldn't add them.");
+    return (data as { token: string }).token;
   }
 
-  async setSpectatorEnabled(id: string, enabled: boolean): Promise<void> {
-    const { error } = await this.db.from('spectator_codes').update({ enabled }).eq('id', id);
-    if (error) fail(error, "Couldn't change the spectator code.");
+  async inviteCreator(id: string): Promise<string> {
+    const { data, error } = await this.db.rpc('invite_trip_creator', { p_creator_id: id });
+    if (error) fail(error, "Couldn't make the invite link.");
+    return data as string;
+  }
+
+  async removeCreator(id: string): Promise<void> {
+    const { error } = await this.db.from('trip_creators').delete().eq('id', id);
+    if (error) fail(error, "Couldn't remove them.");
   }
 
   // ── Course library ─────────────────────────────────────────────────────────
@@ -362,11 +378,11 @@ export class AdminData {
   }
 }
 
-export interface PlayerFields {
+export interface MemberFields {
   name: string;
   initials: string;
-  handicap_index: number | null;
+  email: string | null;
   phone: string | null;
+  handicap_index: number | null;
+  role: Role;
 }
-
-export type { TeeDraft };

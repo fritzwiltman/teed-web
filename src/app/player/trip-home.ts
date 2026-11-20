@@ -59,7 +59,7 @@ interface RoundRow {
             @if (r.group) {
               <p>{{ r.group }}</p>
             }
-            @if (s.player && r.round.status !== 'final') {
+            @if (r.round.status !== 'final') {
               <a ui-button routerLink="/score">{{
                 r.live ? 'Continue scoring' : 'Start scoring'
               }}</a>
@@ -69,7 +69,7 @@ interface RoundRow {
 
         @if (role(); as r) {
           <ui-card aria-label="You">
-            <ui-list-row [title]="s.player?.name ?? 'Watching'">
+            <ui-list-row [title]="s.player.name">
               <ui-chip>{{ r }}</ui-chip>
             </ui-list-row>
           </ui-card>
@@ -101,13 +101,10 @@ export class TripHome {
       .join(' · ');
   });
 
-  /** Owner, Co-admin or Spectator. Regular players have no role worth showing. */
+  /** Organizer or Co-organizer. Players have no role worth showing. */
   protected readonly role = computed(() => {
-    const s = this.session();
-    if (!s) return null;
-    if (!s.player) return 'Spectator';
-    if (s.trip.owner_player_id === s.player.id) return 'Owner';
-    return s.player.role === 'co_admin' ? 'Co-admin' : null;
+    const role = this.session()?.player.role;
+    return role === 'organizer' ? 'Organizer' : role === 'co_organizer' ? 'Co-organizer' : null;
   });
 
   /** The reminder stays until the app is opened from the Home Screen. */
@@ -136,7 +133,7 @@ export class TripHome {
       { name: 'Tees', icon: undefined, value: round.tees?.name ? `${round.tees.name} tees` : '' },
     ].filter((chip) => chip.value);
 
-    const me = this.session()?.player?.id;
+    const me = this.session()?.player.id;
     const mine = round.groups?.find((g) => g.group_players.some((gp) => gp.players?.id === me));
     const group = [...(mine?.group_players ?? [])]
       .sort((a, b) => a.position - b.position)
@@ -171,7 +168,7 @@ export class TripHome {
         .db()
         .from('rounds')
         .select(
-          'round_number, play_date, tee_time, status, courses(name, photo_path), tees(name), round_formats(format_key), groups(group_players(position, players(id, name), scores(count)))',
+          'round_number, play_date, tee_time, status, courses(name, photo_path), tees(name), round_formats(format_key), groups(group_players(position, players:trip_members(id, name), scores(count)))',
         )
         .eq('trip_id', trip.id)
         .order('play_date')

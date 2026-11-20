@@ -3,8 +3,8 @@ import { SessionService } from '../core/session';
 import { UiHeaderBand } from '../core/ui';
 
 /**
- * The header band on a player screen. The owner and co-admins get the "Manage" pill, which
- * switches to the organizer screens for this trip; players and spectators never see it.
+ * The header band on a trip screen. The organizer and co-organizers get the "Manage" pill,
+ * which switches to the organizer screens for this trip; players never see it.
  */
 @Component({
   selector: 'app-player-header',

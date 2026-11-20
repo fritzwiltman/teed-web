@@ -2,7 +2,7 @@ import { Component, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { formatDateRange, localDate } from '../core/format';
 import { UiBadge, UiButton, UiCard, UiListRow, UiSheet, UiSkeleton, tripStage } from '../core/ui';
-import { AdminAuth } from './auth';
+import { AuthService } from '../core/auth';
 import { AdminData, AdminError, Trip } from './data';
 import { OrganizerHeader } from './organizer-header';
 
@@ -24,20 +24,20 @@ import { OrganizerHeader } from './organizer-header';
           <a ui-list-row [routerLink]="['details']" title="Trip details" chevron></a>
         </ui-card>
 
-        @if (auth.isOrganizer()) {
-          @if (t.status === 'draft') {
-            <button ui-button type="button" (click)="confirming.set(true)">Publish</button>
-          }
-
-          <ui-card>
-            <a ui-list-row routerLink="/admin/courses" title="Course library" chevron></a>
-            <a ui-list-row routerLink="/admin" title="All trips" chevron></a>
-          </ui-card>
+        @if (t.status === 'draft') {
+          <button ui-button type="button" (click)="confirming.set(true)">Publish</button>
         }
+
+        <ui-card>
+          @if (me()?.is_trip_creator) {
+            <a ui-list-row routerLink="/admin/courses" title="Course library" chevron></a>
+          }
+          <a ui-list-row routerLink="/you" title="All my trips" chevron></a>
+        </ui-card>
 
         <ui-sheet [(open)]="confirming" label="Publish">
           <h2>Publish {{ t.name }}?</h2>
-          <p class="detail">Player links start working straight away.</p>
+          <p class="detail">Everyone on the trip can open it straight away.</p>
           <button ui-button type="button" [busy]="busy()" (click)="publish(t)">
             {{ busy() ? 'Publishing…' : 'Publish' }}
           </button>
@@ -48,8 +48,8 @@ import { OrganizerHeader } from './organizer-header';
 
         <ui-sheet [(open)]="offering" label="Text links">
           <h2>{{ t.name }} is published</h2>
-          <p class="detail">Text everyone their link now?</p>
-          <a ui-button [routerLink]="['roster']" [queryParams]="{ send: 'all' }">Text links</a>
+          <p class="detail">Text everyone their invite now?</p>
+          <a ui-button [routerLink]="['roster']" [queryParams]="{ send: 'all' }">Text invites</a>
           <button ui-button type="button" variant="outline" (click)="offering.set(false)">
             Not now
           </button>
@@ -65,7 +65,7 @@ export class AdminHome {
 
   private readonly data = inject(AdminData);
   private readonly router = inject(Router);
-  protected readonly auth = inject(AdminAuth);
+  protected readonly me = inject(AuthService).me;
 
   protected readonly trip = signal<Trip | null>(null);
   protected readonly confirming = signal(false);
