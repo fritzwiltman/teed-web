@@ -1,5 +1,6 @@
-import { Injectable, inject, signal } from '@angular/core';
-import { SUPABASE } from './supabase';
+import { Injectable, Injector, computed, inject, signal } from '@angular/core';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { ADMIN_SUPABASE, SUPABASE } from './supabase';
 
 export interface TripInfo {
   id: string;
@@ -9,7 +10,7 @@ export interface TripInfo {
   location: string | null;
   start_date: string;
   end_date: string;
-  /** Which player is the trip's owner. Display only: it grants nothing. */
+  /** Which player is the trip's owner ("This is me"). */
   owner_player_id?: string | null;
 }
 
@@ -25,6 +26,11 @@ export interface TripSession {
   role: 'player' | 'spectator';
   trip: TripInfo;
   player: PlayerInfo | null;
+  /**
+   * How this phone got in: with a code, or as the trip's owner on their organizer (email)
+   * sign-in, where the database treats that account as the player marked "This is me".
+   */
+  via?: 'code' | 'owner';
 }
 
 export type RedeemOutcome =
@@ -36,23 +42,56 @@ export type RedeemOutcome =
   | { status: 'error' };
 
 const KEY = 'teed.session';
+const CODE_KEY = 'teed.code';
+const TRIP_COLUMNS = 'id, name, slug, status, location, start_date, end_date, owner_player_id';
+const PLAYER_COLUMNS = 'id, name, initials, role';
 
 /**
- * Logging in with a code, and staying logged in.
+ * Logging in, and staying logged in.
  *
- * Two things are kept on the phone: the Supabase auth session (an anonymous user, stored and
- * refreshed by the Supabase client) and, here, which trip and player that user was linked to.
- * The second is what lets the app open straight to trip home with no signal; `revalidate()`
- * checks it against the server whenever there is a connection.
+ * Two things are kept on the phone: the Supabase auth session (stored and refreshed by the
+ * Supabase client) and, here, which trip and player that sign-in is. The second is what lets
+ * the app open straight to trip home with no signal; `revalidate()` checks it against the server
+ * whenever there is a connection.
  *
- * Safari and the installed home-screen app have separate storage, so a player enters their code
- * once in each.
+ * Players get in with a code (an anonymous sign-in linked to their player). The trip's owner
+ * needs no code: their organizer sign-in is their player too.
+ *
+ * Safari and the installed home-screen app have separate storage, so a player logs in once in
+ * each.
  */
 @Injectable({ providedIn: 'root' })
 export class SessionService {
   private readonly supabase = inject(SUPABASE);
+  private readonly injector = inject(Injector);
 
   readonly session = signal<TripSession | null>(this.load());
+
+  /** True for the people who get the "Manage" pill: the owner and co-admins. */
+  readonly canManage = computed(() => {
+    const s = this.session();
+    return !!s && (s.via === 'owner' || s.player?.role === 'co_admin');
+  });
+
+  /** Where to go once the session is gone: the owner back to their trips, players to login. */
+  readonly exitUrl = signal('/login');
+
+  /**
+   * The code this phone logged in with. Kept so it can be put on the clipboard for the Home
+   * Screen app, which has its own storage and asks for it once ("Paste my code").
+   */
+  code(): string | null {
+    try {
+      return localStorage.getItem(CODE_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  /** The client the player screens read and write with: the one this session is signed in on. */
+  db(): SupabaseClient {
+    return this.session()?.via === 'owner' ? this.injector.get(ADMIN_SUPABASE) : this.supabase;
+  }
 
   /** Sends the code to the redeem-code function. On 'ok' the session is set and saved. */
   async redeem(code: string): Promise<RedeemOutcome> {
@@ -69,6 +108,16 @@ export class SessionService {
     }
   }
 
+  /** The owner opens their own trip as a player, on their organizer sign-in. */
+  enterAsOwner(trip: TripInfo, player: PlayerInfo): void {
+    try {
+      localStorage.removeItem(CODE_KEY);
+    } catch {
+      // nothing to remove
+    }
+    this.save({ role: 'player', trip, player, via: 'owner' });
+  }
+
   /**
    * Checks the saved session against the server and refreshes the trip and player details.
    * Logs out if the code was revoked or regenerated. With no connection, changes nothing.
@@ -77,33 +126,11 @@ export class SessionService {
     const saved = this.session();
     if (!saved) return;
     try {
-      const { data: auth, error: authError } = await this.supabase.auth.getSession();
-      if (authError) return; // couldn't refresh right now (offline): keep what we have
-      if (!auth.session) return this.clear();
-
-      const { data, error } = await this.supabase
-        .from('trip_sessions')
-        .select(
-          'player_id, trips(id, name, slug, status, location, start_date, end_date, owner_player_id), players(id, name, initials, role)',
-        )
-        .eq('user_id', auth.session.user.id)
-        .eq('trip_id', saved.trip.id)
-        .maybeSingle();
-      if (error) return;
-
-      const row = data as {
-        player_id: string | null;
-        trips: TripInfo | null;
-        players: PlayerInfo | null;
-      } | null;
-      // No row: the code was revoked. No trip: it is no longer open to players.
-      if (!row || !row.trips) return this.clear();
-      if (this.session() !== saved) return; // logged out or switched trip while we were asking
-      this.save({
-        role: row.player_id ? 'player' : 'spectator',
-        trip: row.trips,
-        player: row.players,
-      });
+      const fresh =
+        saved.via === 'owner' ? await this.checkOwner(saved) : await this.checkCode(saved);
+      if (fresh === 'keep' || this.session() !== saved) return; // or it changed while we were asking
+      if (fresh === 'gone') return this.clear(saved.via === 'owner' ? '/admin' : '/login');
+      this.save(fresh);
     } catch {
       // offline: keep what we have
     }
@@ -112,7 +139,12 @@ export class SessionService {
   /** "Switch trip / log out": forgets the trip on this phone and ends its session on the server. */
   async logout(): Promise<void> {
     const saved = this.session();
-    this.clear();
+    if (saved?.via === 'owner') {
+      // Leaving player mode. The organizer sign-in itself stays.
+      this.clear('/admin');
+      return;
+    }
+    this.clear('/login');
     try {
       const { data } = await this.supabase.auth.getSession();
       if (saved && data.session) {
@@ -126,6 +158,67 @@ export class SessionService {
     } catch {
       // offline: the phone is logged out locally, which is what matters to the person holding it
     }
+  }
+
+  private async checkCode(saved: TripSession): Promise<TripSession | 'keep' | 'gone'> {
+    const { data: auth, error: authError } = await this.supabase.auth.getSession();
+    if (authError) return 'keep'; // couldn't refresh right now (offline)
+    if (!auth.session) return 'gone';
+
+    const { data, error } = await this.supabase
+      .from('trip_sessions')
+      .select(`player_id, trips(${TRIP_COLUMNS}), players(${PLAYER_COLUMNS})`)
+      .eq('user_id', auth.session.user.id)
+      .eq('trip_id', saved.trip.id)
+      .maybeSingle();
+    if (error) return 'keep';
+
+    const row = data as {
+      player_id: string | null;
+      trips: TripInfo | null;
+      players: PlayerInfo | null;
+    } | null;
+    // No row: the code was revoked. No trip: it is no longer open to players.
+    if (!row || !row.trips) return 'gone';
+    return {
+      role: row.player_id ? 'player' : 'spectator',
+      trip: row.trips,
+      player: row.players,
+      via: 'code',
+    };
+  }
+
+  private async checkOwner(saved: TripSession): Promise<TripSession | 'keep' | 'gone'> {
+    const db = this.injector.get(ADMIN_SUPABASE);
+    const { data: auth, error: authError } = await db.auth.getSession();
+    if (authError) return 'keep';
+    if (!auth.session) return 'gone';
+
+    const { data, error } = await db
+      .from('trips')
+      .select(`${TRIP_COLUMNS}, owner_id`)
+      .eq('id', saved.trip.id)
+      .maybeSingle();
+    if (error) return 'keep';
+    const found = data as (TripInfo & { owner_id: string | null }) | null;
+    // Still theirs, still open to players, and "This is me" still set.
+    if (
+      !found ||
+      found.owner_id !== auth.session.user.id ||
+      found.status === 'draft' ||
+      !found.owner_player_id
+    )
+      return 'gone';
+
+    const { data: player, error: playerError } = await db
+      .from('players')
+      .select(PLAYER_COLUMNS)
+      .eq('id', found.owner_player_id)
+      .maybeSingle();
+    if (playerError) return 'keep';
+    if (!player) return 'gone';
+    const { owner_id: _owner, ...trip } = found;
+    return { role: 'player', trip, player: player as PlayerInfo, via: 'owner' };
   }
 
   private async callRedeem(code: string): Promise<RedeemOutcome | 'unauthorized'> {
@@ -156,7 +249,12 @@ export class SessionService {
     switch (body?.status) {
       case 'ok':
         if (!body.trip || !body.role) return { status: 'error' };
-        this.save({ role: body.role, trip: body.trip, player: body.player ?? null });
+        this.save({ role: body.role, trip: body.trip, player: body.player ?? null, via: 'code' });
+        try {
+          localStorage.setItem(CODE_KEY, code);
+        } catch {
+          // storage unavailable
+        }
         return { status: 'ok' };
       case 'invalid_code':
         return { status: 'invalid_code' };
@@ -181,10 +279,12 @@ export class SessionService {
     }
   }
 
-  private clear(): void {
+  private clear(exitUrl: string): void {
+    this.exitUrl.set(exitUrl);
     this.session.set(null);
     try {
       localStorage.removeItem(KEY);
+      localStorage.removeItem(CODE_KEY);
     } catch {
       // nothing to remove
     }

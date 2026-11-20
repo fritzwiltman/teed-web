@@ -1,124 +1,136 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { formatDateRange } from '../core/format';
+import { SessionService } from '../core/session';
+import {
+  UiBadge,
+  UiButton,
+  UiCard,
+  UiField,
+  UiHeaderBand,
+  UiListRow,
+  UiSectionHead,
+  UiSkeleton,
+} from '../core/ui';
 import { AdminAuth } from './auth';
 import { AdminData, AdminError, Trip } from './data';
+import { enterPlayerMode } from './organizer-header';
 
-/** The organizer's trips: upcoming (draft or live) and past (final). */
+/** The organizer's trips: upcoming (draft or live) and past (final). No tab bar here. */
 @Component({
   selector: 'app-my-trips',
-  imports: [RouterLink],
+  imports: [
+    RouterLink,
+    UiBadge,
+    UiButton,
+    UiCard,
+    UiField,
+    UiHeaderBand,
+    UiListRow,
+    UiSectionHead,
+    UiSkeleton,
+  ],
   template: `
-    <main class="page">
-      <h1>My trips</h1>
-      <a class="button" routerLink="/admin/trips/new">+ New trip</a>
+    <ui-header-band label="Organizer" title="My trips" />
+    <main class="content">
+      <a ui-button routerLink="/admin/trips/new">New trip</a>
 
       @if (error(); as text) {
         <p class="error-text" role="alert">{{ text }}</p>
       }
+      @if (loading()) {
+        <ui-skeleton shape="block" height="130px" />
+      }
 
       @if (upcoming().length) {
-        <section class="card" aria-label="Upcoming">
-          <div class="row"><span class="label">Upcoming</span></div>
+        <ui-card aria-label="Upcoming">
+          <ui-section-head title="Upcoming" />
           @for (trip of upcoming(); track trip.id) {
-            <a class="row" [routerLink]="['/admin/trips', trip.id]">
-              <span class="trip">
-                <strong>{{ trip.name }}</strong>
-                <span class="label">{{ dates(trip) }}</span>
-              </span>
-              <span class="badge" [class]="trip.status">{{ trip.status }}</span>
-            </a>
+            <button
+              ui-list-row
+              type="button"
+              [title]="trip.name"
+              [detail]="dates(trip)"
+              chevron
+              (click)="open(trip)"
+            >
+              <ui-badge [status]="trip.status" />
+            </button>
           }
-        </section>
+        </ui-card>
       }
 
       @if (past().length) {
-        <section class="card" aria-label="Past">
-          <div class="row"><span class="label">Past</span></div>
+        <ui-card aria-label="Past">
+          <ui-section-head title="Past" />
           @for (trip of past(); track trip.id) {
-            <a class="row" [routerLink]="['/admin/trips', trip.id]">
-              <span class="trip">
-                <strong>{{ trip.name }}</strong>
-                <span class="label">{{ dates(trip) }}</span>
-              </span>
-              <span class="badge final">Final</span>
-            </a>
+            <button
+              ui-list-row
+              type="button"
+              [title]="trip.name"
+              [detail]="dates(trip)"
+              chevron
+              (click)="open(trip)"
+            >
+              <ui-badge status="final" />
+            </button>
           }
-        </section>
+        </ui-card>
       }
 
-      <section class="card">
-        <a class="row" routerLink="/admin/courses"
-          ><span>Course library</span><span aria-hidden="true">›</span></a
-        >
-      </section>
+      <ui-card>
+        <a ui-list-row routerLink="/admin/courses" title="Course library" chevron></a>
+      </ui-card>
 
-      <footer>
-        <span class="label">{{ auth.email() }}</span>
+      <ui-card pad aria-label="Account">
+        <p class="detail">{{ auth.email() }}</p>
         @if (settingPassword()) {
-          <form class="password" (submit)="savePassword($event)" novalidate>
-            <label class="field">
-              <span class="label">New password</span>
+          <form class="stack" (submit)="savePassword($event)" novalidate>
+            <ui-field label="New password">
               <input
-                class="input"
                 name="new-password"
                 type="password"
                 autocomplete="new-password"
                 [value]="newPassword()"
                 (input)="typePassword($event)"
               />
-            </label>
+            </ui-field>
             @if (passwordError(); as text) {
               <p class="error-text" role="alert">{{ text }}</p>
             }
             <div class="actions">
-              <button class="button small" type="submit">Save password</button>
-              <button type="button" class="button small quiet" (click)="settingPassword.set(false)">
+              <button ui-button size="small" type="submit">Save password</button>
+              <button
+                ui-button
+                size="small"
+                variant="outline"
+                type="button"
+                (click)="settingPassword.set(false)"
+              >
                 Cancel
               </button>
             </div>
           </form>
         } @else {
-          <button type="button" class="link-button" (click)="startPassword()">
-            {{ passwordSaved() ? 'Password saved' : 'Set password' }}
-          </button>
-          <button type="button" class="link-button" (click)="signOut()">Sign out</button>
+          <div class="actions">
+            <button ui-button variant="text" type="button" (click)="startPassword()">
+              {{ passwordSaved() ? 'Password saved' : 'Set password' }}
+            </button>
+            <button ui-button variant="text" type="button" (click)="signOut()">Sign out</button>
+          </div>
         }
-      </footer>
+      </ui-card>
     </main>
-  `,
-  styles: `
-    .trip {
-      display: flex;
-      flex-direction: column;
-      gap: 0.15rem;
-      min-width: 0;
-    }
-    .trip strong {
-      font-family: var(--font-heading);
-      font-size: 1.15rem;
-    }
-    footer {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-top: 1rem;
-    }
-    .password {
-      align-self: stretch;
-      display: flex;
-      flex-direction: column;
-      gap: 0.7rem;
-      margin-top: 0.5rem;
-    }
   `,
 })
 export class MyTrips {
   private readonly data = inject(AdminData);
   private readonly router = inject(Router);
+  private readonly sessions = inject(SessionService);
   protected readonly auth = inject(AdminAuth);
 
   private readonly trips = signal<Trip[]>([]);
+  protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
 
   protected readonly upcoming = computed(() =>
@@ -129,11 +141,27 @@ export class MyTrips {
   protected readonly past = computed(() => this.trips().filter((t) => t.status === 'final'));
 
   constructor() {
-    this.data.trips().then(
-      (trips) => this.trips.set(trips),
-      (e: unknown) =>
-        this.error.set(e instanceof AdminError ? e.message : "Couldn't load your trips."),
-    );
+    this.data
+      .trips()
+      .then(
+        (trips) => this.trips.set(trips),
+        (e: unknown) =>
+          this.error.set(e instanceof AdminError ? e.message : "Couldn't load your trips."),
+      )
+      .finally(() => this.loading.set(false));
+  }
+
+  /**
+   * A draft opens in organizer mode. A trip that is open to players opens in player mode, as the
+   * player marked "This is me"; without one it opens in organizer mode too.
+   */
+  protected async open(trip: Trip): Promise<void> {
+    try {
+      if (await enterPlayerMode(trip, this.auth, this.data, this.sessions, this.router)) return;
+    } catch {
+      // fall through to the organizer screens
+    }
+    await this.router.navigate(['/admin/trips', trip.id]);
   }
 
   // Setting a password, for signing in without the emailed link.

@@ -1,9 +1,13 @@
-// Trip codes look like VERO-FW27-K4M9. The server ignores case, spaces and dashes, so the field
-// only needs to keep what is typed tidy.
+// Login codes are six characters (K4M9QT). Codes issued before that are longer, with dashes
+// (PINES-FW26-K4M9), and still work. The server ignores case, spaces and dashes.
+
+/** The characters a new code is made of: no I, O, 0 or 1. */
+export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const CODE_LENGTH = 6;
 
 const MAX_LENGTH = 32;
 
-/** What the code field shows for what was typed: capitals, with spaces turned into dashes. */
+/** A code as pasted or typed, made tidy: capitals, with spaces turned into dashes. */
 export function tidyCode(raw: string): string {
   return raw
     .toUpperCase()
@@ -14,7 +18,27 @@ export function tidyCode(raw: string): string {
     .slice(0, MAX_LENGTH);
 }
 
-/** Long enough to be worth sending (the shortest real code has 9 letters and digits). */
+/** Long enough to be worth sending. */
 export function looksLikeCode(raw: string): boolean {
-  return raw.replace(/[^A-Za-z0-9]/g, '').length >= 6;
+  return raw.replace(/[^A-Za-z0-9]/g, '').length >= CODE_LENGTH;
+}
+
+/**
+ * Finds the code in whatever is on the clipboard: the code alone, a join link, or the whole text
+ * message. Returns '' when there is nothing that could be one.
+ */
+export function codeFromClipboard(text: string): string {
+  const link = /\/join\/([A-Za-z0-9-]+)/.exec(text);
+  if (link) return tidyCode(link[1]);
+  const trimmed = text.trim();
+  // The code by itself (old or new style), not a sentence that happens to be long enough.
+  if (/^[A-Za-z0-9][A-Za-z0-9\s-]*$/.test(trimmed) && looksLikeCode(trimmed))
+    return tidyCode(trimmed);
+  return '';
+}
+
+/** One typed character for a code box: a capital letter or digit, or '' if it can't be in a code. */
+export function codeChar(raw: string): string {
+  const char = raw.slice(-1).toUpperCase();
+  return /^[A-Z0-9]$/.test(char) ? char : '';
 }

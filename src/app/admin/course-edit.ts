@@ -1,5 +1,14 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
+import {
+  UiAlertCard,
+  UiButton,
+  UiCard,
+  UiField,
+  UiHeaderBand,
+  UiListRow,
+  UiSkeleton,
+} from '../core/ui';
 import { AdminData, AdminError } from './data';
 import { DraftStore, blankTee } from './draft-store';
 import {
@@ -31,18 +40,20 @@ type HoleField = 'par' | 'stroke_index' | 'hole_yards';
 /** One course: its details, photo and tees. Every cell is editable, imported or not. */
 @Component({
   selector: 'app-course-edit',
-  imports: [RouterLink],
+  imports: [UiAlertCard, UiButton, UiCard, UiField, UiHeaderBand, UiListRow, UiSkeleton],
   template: `
-    <main class="page">
-      <a class="back" routerLink="/admin/courses">‹ Course library</a>
+    <ui-header-band
+      [title]="draft()?.name || 'New course'"
+      back="/admin/courses"
+      backLabel="Course library"
+    />
+    <main class="content">
       @if (draft(); as c) {
-        <h1>{{ c.name || 'New course' }}</h1>
-
         @if (c.id) {
           @if (photoUrl(); as url) {
             <img class="photo" [src]="url" alt="" />
           }
-          <label class="button quiet">
+          <label ui-button variant="outline" [busy]="busy() === 'photo'">
             {{ busy() === 'photo' ? 'Uploading…' : c.photo_path ? 'Replace photo' : 'Add photo' }}
             <input
               type="file"
@@ -55,304 +66,262 @@ type HoleField = 'par' | 'stroke_index' | 'hole_yards';
         }
 
         @if (needsIndex()) {
-          <p class="banner" role="status">
+          <ui-alert-card level="important">
             The stroke index is still a placeholder (1 to {{ c.tees[0]?.par?.length }} in order).
             Enter it from the scorecard.
-          </p>
+          </ui-alert-card>
         }
         @if (gaps().par) {
-          <p class="banner" role="status">
+          <ui-alert-card level="important">
             OpenGolf has no hole pars for this course. Enter them from the scorecard.
-          </p>
+          </ui-alert-card>
         }
 
-        <section class="card pad fields">
-          <label class="field"
-            ><span class="label">Name</span
-            ><input class="input" [value]="c.name" (input)="setText('name', $event)"
-          /></label>
+        <ui-card pad>
+          <ui-field label="Name">
+            <input [value]="c.name" (input)="setText('name', $event)" />
+          </ui-field>
           <div class="pair">
-            <label class="field"
-              ><span class="label">Short name</span
-              ><input
-                class="input"
-                [value]="c.short_name ?? ''"
-                (input)="setText('short_name', $event)"
-            /></label>
-            <label class="field"
-              ><span class="label">Location</span
-              ><input
-                class="input"
-                [value]="c.location ?? ''"
-                (input)="setText('location', $event)"
-            /></label>
+            <ui-field label="Short name">
+              <input [value]="c.short_name ?? ''" (input)="setText('short_name', $event)" />
+            </ui-field>
+            <ui-field label="Location">
+              <input [value]="c.location ?? ''" (input)="setText('location', $event)" />
+            </ui-field>
           </div>
           <div class="pair">
-            <label class="field"
-              ><span class="label">Architect</span
-              ><input
-                class="input"
-                [value]="c.architect ?? ''"
-                (input)="setText('architect', $event)"
-            /></label>
-            <label class="field"
-              ><span class="label">Year opened</span
-              ><input
-                class="input mono"
-                inputmode="numeric"
-                [value]="c.year_opened ?? ''"
-                (input)="setYear($event)"
-            /></label>
+            <ui-field label="Architect">
+              <input [value]="c.architect ?? ''" (input)="setText('architect', $event)" />
+            </ui-field>
+            <ui-field label="Year opened">
+              <input inputmode="numeric" [value]="c.year_opened ?? ''" (input)="setYear($event)" />
+            </ui-field>
           </div>
-          <label class="field"
-            ><span class="label">Description</span
-            ><textarea
-              class="input"
+          <ui-field label="Description">
+            <textarea
               [value]="c.description ?? ''"
               (input)="setText('description', $event)"
             ></textarea>
-          </label>
-          <label class="field"
-            ><span class="label">Website</span
-            ><input
-              class="input"
+          </ui-field>
+          <ui-field label="Website">
+            <input
               type="url"
               inputmode="url"
               [value]="c.website_url ?? ''"
               (input)="setText('website_url', $event)"
-          /></label>
-          <label class="field"
-            ><span class="label">Scorecard link</span
-            ><input
-              class="input"
+            />
+          </ui-field>
+          <ui-field label="Scorecard link">
+            <input
               type="url"
               inputmode="url"
               [value]="c.scorecard_url ?? ''"
               (input)="setText('scorecard_url', $event)"
-          /></label>
-          <label class="field"
-            ><span class="label">Directions link</span
-            ><input
-              class="input"
+            />
+          </ui-field>
+          <ui-field label="Directions link">
+            <input
               type="url"
               inputmode="url"
               [value]="c.directions_url ?? ''"
               (input)="setText('directions_url', $event)"
-          /></label>
-        </section>
+            />
+          </ui-field>
+        </ui-card>
 
         @for (tee of c.tees; track $index; let t = $index) {
-          <details class="card tee">
-            <summary class="row">
-              <strong>{{ tee.name || 'New tee' }}</strong>
-              <span class="label">{{ summary(tee) }}</span>
-            </summary>
-            <div class="row stack">
+          <ui-card>
+            <details>
+              <summary>
+                <ui-list-row [title]="tee.name || 'New tee'" [detail]="summary(tee)" chevron />
+              </summary>
               <div class="quad">
-                <label class="field"
-                  ><span class="label">Tee</span
-                  ><input class="input" [value]="tee.name" (input)="setTeeName(t, $event)"
-                /></label>
-                <label class="field"
-                  ><span class="label">Yards</span
-                  ><input
-                    class="input mono"
+                <ui-field label="Tee">
+                  <input [value]="tee.name" (input)="setTeeName(t, $event)" />
+                </ui-field>
+                <ui-field label="Yards" class="compact">
+                  <input
                     inputmode="numeric"
                     [value]="tee.yards ?? ''"
                     (input)="setTeeNumber(t, 'yards', $event)"
-                /></label>
-                <label class="field"
-                  ><span class="label">Rating</span
-                  ><input
-                    class="input mono"
+                  />
+                </ui-field>
+                <ui-field label="Rating" class="compact">
+                  <input
                     inputmode="decimal"
                     [value]="tee.rating ?? ''"
                     (input)="setTeeNumber(t, 'rating', $event)"
-                /></label>
-                <label class="field"
-                  ><span class="label">Slope</span
-                  ><input
-                    class="input mono"
+                  />
+                </ui-field>
+                <ui-field label="Slope" class="compact">
+                  <input
                     inputmode="numeric"
                     [value]="tee.slope ?? ''"
                     (input)="setTeeNumber(t, 'slope', $event)"
-                /></label>
+                  />
+                </ui-field>
               </div>
-            </div>
-            <div class="holes" role="table" [attr.aria-label]="tee.name + ' holes'">
-              <div class="hole head" role="row">
-                <span class="label" role="columnheader">Hole</span>
-                <span class="label" role="columnheader">Par</span>
-                <span class="label" role="columnheader">SI</span>
-                <span class="label" role="columnheader">Yards</span>
-              </div>
-              @for (par of tee.par; track $index; let h = $index) {
-                <div class="hole" role="row">
-                  <span class="mono" role="rowheader">{{ h + 1 }}</span>
-                  <input
-                    class="cell"
-                    inputmode="numeric"
-                    [attr.aria-label]="'Hole ' + (h + 1) + ' par'"
-                    [value]="par"
-                    (input)="setHole(t, 'par', h, $event)"
-                  />
-                  <input
-                    class="cell"
-                    inputmode="numeric"
-                    [attr.aria-label]="'Hole ' + (h + 1) + ' stroke index'"
-                    [value]="tee.stroke_index[h]"
-                    (input)="setHole(t, 'stroke_index', h, $event)"
-                  />
-                  <input
-                    class="cell"
-                    inputmode="numeric"
-                    [attr.aria-label]="'Hole ' + (h + 1) + ' yards'"
-                    [value]="tee.hole_yards?.[h] ?? ''"
-                    (input)="setHole(t, 'hole_yards', h, $event)"
-                  />
+              <div class="holes" role="table" [attr.aria-label]="tee.name + ' holes'">
+                <div class="hole head" role="row">
+                  <span role="columnheader">Hole</span>
+                  <span role="columnheader">Par</span>
+                  <span role="columnheader">SI</span>
+                  <span role="columnheader">Yards</span>
                 </div>
-              }
-            </div>
-            <div class="row">
-              <button type="button" class="link-button" (click)="removeTee(t)">
-                Remove this tee
-              </button>
-            </div>
-          </details>
+                @for (par of tee.par; track $index; let h = $index) {
+                  <div class="hole" role="row">
+                    <span role="rowheader">{{ h + 1 }}</span>
+                    <input
+                      class="cell"
+                      inputmode="numeric"
+                      [attr.aria-label]="'Hole ' + (h + 1) + ' par'"
+                      [value]="par"
+                      (input)="setHole(t, 'par', h, $event)"
+                    />
+                    <input
+                      class="cell"
+                      inputmode="numeric"
+                      [attr.aria-label]="'Hole ' + (h + 1) + ' stroke index'"
+                      [value]="tee.stroke_index[h]"
+                      (input)="setHole(t, 'stroke_index', h, $event)"
+                    />
+                    <input
+                      class="cell"
+                      inputmode="numeric"
+                      [attr.aria-label]="'Hole ' + (h + 1) + ' yards'"
+                      [value]="tee.hole_yards?.[h] ?? ''"
+                      (input)="setHole(t, 'hole_yards', h, $event)"
+                    />
+                  </div>
+                }
+              </div>
+              <div class="remove">
+                <button ui-button variant="text" type="button" (click)="removeTee(t)">
+                  Remove this tee
+                </button>
+              </div>
+            </details>
+          </ui-card>
         }
-        <button type="button" class="button quiet" (click)="addTee()">+ Add tee</button>
+        <button ui-button variant="outline" type="button" (click)="addTee()">Add tee</button>
 
         @if (c.source === 'opengolfapi') {
-          <section class="card" aria-label="Source">
-            <div class="row source">
-              <span class="label"
-                >{{ credit }}{{ checked() ? ' · checked ' + checked() : '' }}</span
-              >
+          <ui-card aria-label="Source">
+            <ui-list-row [title]="credit" [detail]="checked() ? 'Checked ' + checked() : null">
               @if (c.source_ref && !changes()) {
                 <button
+                  ui-button
+                  size="small"
+                  variant="outline"
                   type="button"
-                  class="button small quiet"
+                  [busy]="busy() === 'refresh'"
                   [disabled]="!!busy()"
                   (click)="refresh()"
                 >
                   {{ busy() === 'refresh' ? 'Checking…' : 'Refresh' }}
                 </button>
               }
-            </div>
+            </ui-list-row>
             @if (changes(); as list) {
               @for (change of list; track $index) {
-                <div class="row change">
-                  <span
-                    ><strong>{{ change.tee }}</strong> · {{ change.what }}</span
-                  >
-                  <span class="mono">{{ change.from }} → {{ change.to }}</span>
-                </div>
+                <ui-list-row
+                  [title]="change.tee + ' · ' + change.what"
+                  [detail]="change.from + ' → ' + change.to"
+                />
               }
-              <div class="row actions">
+              <ui-list-row>
                 <button
+                  ui-button
+                  size="small"
                   type="button"
-                  class="button small"
                   [disabled]="!!busy()"
                   (click)="resolve(true)"
                 >
                   Apply changes
                 </button>
                 <button
+                  ui-button
+                  size="small"
+                  variant="outline"
                   type="button"
-                  class="button small quiet"
                   [disabled]="!!busy()"
                   (click)="resolve(false)"
                 >
                   Keep mine
                 </button>
-              </div>
+              </ui-list-row>
             }
-          </section>
+          </ui-card>
         }
 
         @if (error(); as text) {
           <p class="error-text" role="alert">{{ text }}</p>
         }
-        <button type="button" class="button" [disabled]="!!busy()" (click)="save()">
+        <button
+          ui-button
+          type="button"
+          [busy]="busy() === 'save'"
+          [disabled]="!!busy()"
+          (click)="save()"
+        >
           {{ busy() === 'save' ? 'Saving…' : c.id ? 'Save' : 'Add to library' }}
         </button>
       } @else if (error(); as text) {
         <p class="error-text" role="alert">{{ text }}</p>
+      } @else {
+        <ui-skeleton shape="block" height="300px" />
       }
     </main>
   `,
+  // The hole-by-hole grid is this screen's own layout: 18 rows of bare cells, like the card.
   styles: `
     .photo {
       width: 100%;
       aspect-ratio: 16 / 9;
       object-fit: cover;
-      border: 1.5px solid var(--frame);
-      border-radius: var(--radius);
-    }
-    .fields {
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-    }
-    .pair {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.6rem;
-    }
-    .quad {
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr 1fr;
-      gap: 0.4rem;
-    }
-    .quad .input {
-      padding: 0 0.4rem;
+      border-radius: var(--radius-card);
     }
     summary {
       cursor: pointer;
       list-style: none;
-      min-height: var(--tap);
-      align-items: center;
     }
     summary::-webkit-details-marker {
       display: none;
     }
-    summary strong {
-      font-family: var(--font-heading);
+    .quad {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: var(--s2);
+      padding: var(--s1) var(--s4) var(--s4);
     }
     .hole {
       display: grid;
-      grid-template-columns: 3rem 1fr 1fr 1.4fr;
+      grid-template-columns: 56px 1fr 1fr 1.4fr;
       align-items: center;
       border-top: 1px solid var(--line);
-    }
-    .hole > * {
       text-align: center;
-      border-left: 1px solid var(--line);
     }
-    .hole > :first-child {
-      border-left: 0;
-    }
-    .hole.head > * {
-      padding: 0.45rem 0;
+    .hole.head {
+      padding: var(--s2) 0;
+      font-size: 12px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
     }
     .cell {
       width: 100%;
-      min-height: 2.75rem;
-      border-top: 0;
-      border-right: 0;
-      border-bottom: 0;
+      min-width: 0;
+      height: var(--tap);
+      border: 0;
+      border-left: 1px solid var(--line);
       border-radius: 0;
-      background: var(--field);
+      background: transparent;
       color: var(--ink);
-      font: 500 1rem var(--font-mono);
+      text-align: center;
     }
-    .source,
-    .change {
-      align-items: center;
-    }
-    .change .mono {
-      text-align: right;
-      overflow-wrap: anywhere;
+    .remove {
+      padding: var(--s1) var(--s4);
+      border-top: 1px solid var(--line);
     }
   `,
 })

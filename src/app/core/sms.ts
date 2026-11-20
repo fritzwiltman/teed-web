@@ -1,22 +1,27 @@
-// Texting a player their code.
+// Texting a player their join link.
 
 import { environment } from '../../environments/environment';
 
 /**
- * The message a player gets. The link is always the production address, never the page the
+ * The link that logs a phone straight in. Always the production address, never the page the
  * organizer happens to be on (a preview link would install the wrong app).
  */
-export function codeMessage(trip: string, code: string, url: string = environment.appUrl): string {
-  return `You’re in for ${trip} ⛳ Your Teed code: ${code}. Open ${url}, add it to your Home Screen, and enter your code.`;
+export function joinLink(code: string, url: string = environment.appUrl): string {
+  return `${url}/join/${encodeURIComponent(code.replace(/[^A-Za-z0-9]/g, '').toUpperCase())}`;
 }
 
-/** The message for sharing the spectator code. Production address, as above. */
+/** The text a player gets. */
+export function linkMessage(trip: string, code: string, url: string = environment.appUrl): string {
+  return `You’re in for ${trip}. Tap to open Teed: ${joinLink(code, url)}`;
+}
+
+/** The text for sharing the spectator link. */
 export function spectatorMessage(
   trip: string,
   code: string,
   url: string = environment.appUrl,
 ): string {
-  return `Follow ${trip} live ⛳ Open ${url} and enter the spectator code: ${code}`;
+  return `Follow ${trip} live. Tap to open Teed: ${joinLink(code, url)}`;
 }
 
 /**

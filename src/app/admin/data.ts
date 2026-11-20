@@ -1,5 +1,7 @@
 import { Injectable, inject } from '@angular/core';
-import { ADMIN_SUPABASE } from '../core/supabase';
+import { PlayerInfo } from '../core/session';
+import { ADMIN_SUPABASE, SUPABASE } from '../core/supabase';
+import { AdminAuth } from './auth';
 import { CourseDraft, TeeDraft } from './opengolf';
 
 export type TripStatus = 'draft' | 'live' | 'final';
@@ -78,10 +80,20 @@ function fail(error: { message: string; code?: string } | null, fallback: string
   throw new AdminError(fallback);
 }
 
-/** Everything the organizer screens read and write. All of it goes through RLS as the signed-in organizer. */
+/**
+ * Everything the organizer screens read and write. All of it goes through RLS as whoever is
+ * using them: the organizer on their email sign-in, or a co-admin on the sign-in their code gave
+ * them (the database then allows a co-admin only what a co-admin may do).
+ */
 @Injectable({ providedIn: 'root' })
 export class AdminData {
-  private readonly db = inject(ADMIN_SUPABASE);
+  private readonly auth = inject(AdminAuth);
+  private readonly organizerDb = inject(ADMIN_SUPABASE);
+  private readonly playerDb = inject(SUPABASE);
+
+  private get db() {
+    return this.auth.isOrganizer() ? this.organizerDb : this.playerDb;
+  }
 
   // ── Trips ──────────────────────────────────────────────────────────────────
 
@@ -170,6 +182,17 @@ export class AdminData {
     }));
   }
 
+  /** One player, as the player screens know them. */
+  async player(id: string): Promise<PlayerInfo> {
+    const { data, error } = await this.db
+      .from('players')
+      .select('id, name, initials, role')
+      .eq('id', id)
+      .maybeSingle();
+    if (error || !data) fail(error, "Couldn't load that player.");
+    return data as PlayerInfo;
+  }
+
   /** Adds a player and issues their code. */
   async addPlayer(tripId: string, player: PlayerFields, sortOrder: number): Promise<void> {
     const { data, error } = await this.db
@@ -199,7 +222,8 @@ export class AdminData {
       })
       .eq('id', id);
     if (error) fail(error, "Couldn't save the player.");
-    await this.setPhone(id, player.phone);
+    // Phone numbers are the owner's alone.
+    if (this.auth.isOrganizer()) await this.setPhone(id, player.phone);
   }
 
   async setRole(id: string, role: 'player' | 'co_admin'): Promise<void> {

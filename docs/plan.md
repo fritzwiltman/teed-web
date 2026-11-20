@@ -1,15 +1,15 @@
 # Teed — Build Plan
 
 Markdown copy of the build plan (source: https://claude.ai/artifact/EjFNgELk12pGAnNS5CpSZu), exported Nov 18, 2026, then
-updated in the repo for the M1 schema and M2 login as built. The claude.ai doc is the master: sync it from the
-Schema and Login sections here. Wireframes: https://claude.ai/artifact/CAMT8mmSpgajXZkR5YPbBL
+updated in the repo for the M1 schema, M2 login, and the Nov 19 design review (M3.5) as built. The claude.ai doc
+is the master: sync it from the Design review, Schema and Login sections here. Wireframes: https://claude.ai/artifact/CAMT8mmSpgajXZkR5YPbBL
 
 Current setup: repo `fritzwiltman/teed-web`, Cloudflare Worker `teed` at https://teed.fgwilt1.workers.dev,
 Supabase project `https://mhfuxacwpzzthethgfcp.supabase.co`.
 
 ## Overview
 
-A free, reusable live-scoring web app for golf trips: players log in with a personal code, enter scores hole by hole
+A free, reusable live-scoring web app for golf trips: players log in from a texted link (a personal code), enter scores hole by hole
 for themselves or their foursome, and watch a live leaderboard with push alerts. One deployment serves every trip;
 a new trip is a few minutes of admin setup, not a new app.
 
@@ -28,7 +28,64 @@ Principles:
 - **One app, many trips.** Every record belongs to a trip; codes only open their own trip.
 - **Small, reviewable steps.** One milestone per session, each ending in a working deploy.
 
+## Design review decisions (Nov 19)
+
+The wireframes' Player, Organizer and Design system pages are the spec. Where this plan and the wireframes disagree, the wireframes win.
+
+- **Theme:**
+  - Tour, light and dark from the phone's setting.
+  - Build a token file and shared components first; screens only compose them.
+  - Skeletons for loading content; spinners only inside a button or a sync line.
+- **Screens render data, never a format.** The "today's game" card, leaderboards and breakdowns take rows that each format plug-in supplies. No screen hard-codes Sixes, Nassau or any other format.
+- **Only pertinent info on screen.**
+  - No labels that explain how the app works, and no app-computed drive or leave times.
+  - Every day header reads "Label · Ddd, Mon D".
+- **Login:**
+  - Browser-first, with 6-character codes sent as a texted join link.
+  - "Add to Home Screen" is a strongly suggested, skippable step after the link, plus a home-page reminder until installed. On iPhone, push only works from the Home Screen app.
+  - "Paste my code" if the Home Screen app opens signed out.
+  - The alerts permission is asked after install, from a button tap.
+- **Home page states:**
+  - Travel day: the next item up and the house.
+  - Before your tee time: a countdown to that player's own tee time, "Start scoring" about 30 minutes out, and the game card.
+  - During a round: "Continue scoring" and the live mini board.
+  - After the round: your finish, winnings and "See breakdown".
+  - After the trip: winnings only.
+  - Each state is followed by Rest of today and Tomorrow; there's no whole-trip overview.
+- **Live dot:** a blinking red dot marks a live round on the course photo, the leaderboard tab and the home mini board. It stops for Reduce Motion.
+- **Round lifecycle:** Scheduled → Live → Complete → Final.
+  - Live starts with the first score.
+  - Complete means every player has every hole; a pickup counts.
+  - Final happens when the organizer taps Finalize after reviewing flags (e.g. late score changes), or automatically at midnight.
+  - Final locks scores (the organizer can still fix one, with history), makes results official and sends a "Round final" alert.
+  - The organizer can mark a player "Didn't finish", end a round early after hole N, or reopen a final round.
+- **Money:**
+  - Buy-ins only, so money is winnings from the pot, never negative.
+  - "See breakdown" shows where each dollar came from. Payment stays outside the app.
+  - Buy-ins: a dollar amount per round on the trip, and a paid checkbox per player that only the organizer and co-admins can tick.
+  - Everyone can see who's paid: a home card until all have paid, and always under Trip › Info.
+- **Round setup:**
+  - 18 holes, front 9 or back 9.
+  - Handicap settings are trip defaults that any round can override.
+  - Formats can bring their own rule: a scramble's team handicap is A% of the low player plus B% of the high.
+  - Rounds store only their overrides.
+- **Pairings:**
+  - Manual, Random or Balanced.
+  - Every name is a tappable button; tap one, then another, to swap, with Undo.
+  - Swaps work across teams and groups.
+- **Itinerary:** anyone on the trip can suggest a change; only the organizer and co-admins edit or approve (enforced in RLS).
+- **Alerts:**
+  - Three levels for organizer announcements: Announcement (green), Important (amber) and Urgent (red, sent time-sensitive).
+  - Saving a tee time or itinerary change offers "Notify everyone?"
+- **Organizer mode:**
+  - Its own docked tab bar: Overview · Rounds · People · Itinerary.
+  - "Go live", then a separate prompt to text everyone their link.
+- **Trip tab:** Itinerary · Courses · Info (stay, buy-ins, house rules).
+
 ## Screens (from the wireframes)
+
+Written before the design review. Where a screen below disagrees with the decisions above, the decisions win.
+
 
 1. **Login:** one field for the player or spectator code (e.g. `VERO-FW27-K4M9`), big "Join trip" button. "Add to Home
    Screen" hint on first visit with browser-specific steps (iPhone Safari/Chrome: Share → Add to Home Screen, with a
@@ -73,11 +130,11 @@ the Data API doesn't expose)
 | Table | Key columns |
 | --- | --- |
 | `app_admins` | user id. Who may create trips and edit the course library (email sign-up is open, so it's an explicit list) |
-| `trips` | owner, name, slug (`VERO`), dates, status (draft/live/final), theme, house rules (handicap allowance, strokes off low man, pick-up at net double, spectators see money, handicap lock date), banker, owner's player (display only) |
+| `trips` | owner, name, slug (an internal handle made from the name; no longer part of codes), dates, status (draft/live/final), theme, house rules (handicap allowance, strokes off low man, pick-up at net double, spectators see money, handicap lock date), banker, owner's player ("This is me") |
 | `players` | trip, name, initials, role (player/co-admin), handicap index, index entered/locked at. No codes or GHIN numbers here: everyone on the trip can read this table |
 | `player_codes` | player, code, issued at. Trip admins only |
 | `player_ghin` | player, GHIN number. Players and admins, never spectators |
-| `player_contacts` | player, mobile number (for texting their code). Owner only |
+| `player_contacts` | player, mobile number (for texting their join link). Owner only |
 | `spectator_codes` | trip, code, label, enabled. Trip admins only |
 | `trip_sessions` | auth user, trip, player **or** spectator code. Written only by `redeem-code`. One player can have several (Safari and the home-screen app are separate anonymous users) |
 | `courses` | name, short name, location, architect, year, description, links, photo, source + ratings_checked_at |
@@ -98,18 +155,30 @@ the Data API doesn't expose)
 - Players and spectators: the phone signs in anonymously, then edge function `redeem-code` links that session to
   a player (or a read-only spectator) on a **live** trip and returns the trip and player. The link is a
   `trip_sessions` row; the app also caches it so it opens with no signal.
-- Codes: trip slug + initials + 2-digit year + 4 random characters (`VERO-FW27-K4M9`, no I/O/0/1); typed in any
-  case, with or without dashes. Regenerating or revoking a code signs out every phone that used it.
+- Codes: 6 random characters (`K4M9QT`, no I/O/0/1), unique across every trip and across player and spectator
+  codes; typed or pasted in any case. Codes issued before M3.5 (`PINES-FW26-K4M9`) keep working. Regenerating or
+  revoking a code signs out every phone that used it.
+- Join link: the organizer texts each player `https://teed.fgwilt1.workers.dev/join/<code>` (always the
+  production address). Opening it logs the phone in and goes to the skippable "Add to Home Screen" step. Either
+  button there copies the code, so the Home Screen app (separate storage) logs in with "Paste my code"; six boxes
+  take it by hand. There is no other login form for players.
 - Rate limit on failed codes: 5 a minute per device, 30 a minute per IP (looser, since a group shares one Wi-Fi
   address), then a 5-minute lockout.
-- Owner (Fritz): email magic link, listed in `app_admins`. Owner-only: creating and deleting trips, the course
-  library, login codes, deleting players or rounds. `trips.owner_player_id` marks the owner's player so trip home
-  can show "Owner"; it grants nothing, and the owner's player code logs in with ordinary player rights.
+- Owner (Fritz): email sign-in, listed in `app_admins`. Owner-only: creating and deleting trips, the course
+  library, login codes, phone numbers, deleting players or rounds.
+- "This is me" (`trips.owner_player_id`) links the owner's player to their organizer account: on that sign-in,
+  RLS treats the trip's owner as that player (their group's scores, check-in, checklist), so one email session
+  serves both the player and the organizer screens and the owner never redeems a code. Only the trip's own owner
+  gets this, only they can set it, and it gives no one else anything. Without it, a trip opens in organizer mode.
+- Mode switch: the owner and co-admins see "Manage" on player screens and "Player view" on organizer screens
+  (hidden while the trip is a draft). From My trips a draft opens in organizer mode, a live trip in player mode.
 - Organizer sign-in is separate from the player login on the same phone (its own stored session): email and
   password, with "Email me a link instead" as the second option (a link opens in Safari, never in the installed
   app, so the password is the way in there). The password is set from My trips. No new accounts are created
   from the sign-in screen.
-- Co-admins: any player, per trip, acting through their code: pairings, score fixes, rounds and trip info.
+- Co-admins: any player, per trip, using the organizer screens on their code login: pairings, score fixes,
+  rounds, itinerary and trip info. The screens hide what the database denies them (codes, links, phone numbers,
+  adding or deleting players, the course library).
 - RLS everywhere: players read only their trip (once it is live or final) and write scores and presses only for
   their group while the trip is live and the round isn't final; spectators read-only and never see GHIN numbers,
   codes or the checklist; only owner/co-admins write setup. Handicap check-in goes through `submit_handicap()`.
@@ -151,6 +220,7 @@ The URL is locked: home-screen installs are tied to it.
 | M1 | Schema, RLS policies, seed: Southern Pines 2026 trip (4 courses, tees, ratings, players, handicaps, real gross scores and formats from the old site) | `supabase db push` succeeds; RLS tests pass |
 | M2 | Code login (`redeem-code` + login screen) | A test code logs in on an iPhone and lands on trip home |
 | M3 | Admin: trips, roster, courses (+ seed list import), rounds, groups, code generator | A full trip set up without SQL |
+| M3.5 | Design system: Tour tokens, shared components in `app/core/ui`, `/dev/ui`; existing screens restyled; 6-character codes and join links; logo and icons; owner plays on the organizer sign-in | `/dev/ui` is right in light and dark on an iPhone; a texted link logs straight in; "Paste my code" works in the Home Screen app |
 | M4 | Scorecard for the foursome | Scores save per hole; teammates see edits |
 | M5 | Offline queue | Airplane-mode scores sync with no duplicates |
 | M6 | Live round and trip leaderboards (gross and net) | Two phones update within seconds |
@@ -216,12 +286,23 @@ new leader (only after every group is through 2 holes, judged on score to par); 
 
 ## Theme
 
-Theme A "Scorecard" default: Bitter headings, IBM Plex Mono numbers/labels, Libre Franklin body; card stock
-`#F1EBDC`, ink `#1C2B22`, pine `#1F4D36`, under-par red `#B3392F`; dark frames with light inner lines; floating pill
-nav with a filled active pill; dark mode (pine-black `#141B16`, cream text `#ECE5D3`, coral-red `#EE7A6D`).
-Follows the phone's light/dark setting with an override. Coastal is the first alternate; later, per-trip themes
-change tokens only.
+Theme "Tour" (replaced Theme A "Scorecard" in the Nov 19 design review): Barlow Semi Condensed headings and big
+numbers, Barlow body, tabular figures everywhere; pale green-gray background `#F3F5F2`, white cards with a soft
+shadow, a pine-green header band `#14532D`; red `#C0262D` only for under par, "Not paid", urgent alerts and the
+live dot; a docked bottom tab bar with icons, the active tab on a tinted pill. Light and dark follow the phone's
+setting with a manual override. Tokens live in `src/styles/tokens.scss`; fonts are self-hosted in `public/fonts`
+so the installed app has them with no signal. Screens compose the components in `src/app/core/ui` and never
+restyle a card or button themselves; `/dev/ui` shows every component in every state, light beside dark.
+The logo is a green tee drawn as a T with a red ball on it; the wordmark is "teed" in Barlow Semi Condensed 700.
 
 ## Open decisions
+
+Decided in the Nov 19 design review:
+
+- [x] Theme: Tour, light and dark from the phone's setting (was Theme A "Scorecard").
+- [x] Code format: 6 random characters, sent as a texted join link (was `VERO-FW27-K4M9`, typed in).
+- [x] Owner as a player: "This is me" plus the organizer sign-in; no second session (was: display only).
+
+Still open:
 
 - [ ] Spectators and money: should spectators see pots, payouts and buy-ins by default? (Per-trip toggle either way.)

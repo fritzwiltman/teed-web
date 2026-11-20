@@ -1,48 +1,62 @@
-import { codeMessage, formatPhone, initialsFor, smsLink, spectatorMessage, tidyPhone } from './sms';
+import {
+  formatPhone,
+  initialsFor,
+  joinLink,
+  linkMessage,
+  smsLink,
+  spectatorMessage,
+  tidyPhone,
+} from './sms';
 
-describe('texting a code', () => {
+describe('texting a join link', () => {
   it('writes the message players get', () => {
-    expect(codeMessage('Vero Beach 2027', 'VERO-FW27-K4M9', 'https://teed.example')).toBe(
-      'You’re in for Vero Beach 2027 ⛳ Your Teed code: VERO-FW27-K4M9. Open https://teed.example, add it to your Home Screen, and enter your code.',
+    expect(linkMessage('Vero Beach 2027', 'K4M9QT', 'https://teed.example')).toBe(
+      'You’re in for Vero Beach 2027. Tap to open Teed: https://teed.example/join/K4M9QT',
     );
   });
 
   it('always links to the production address, wherever the organizer has the app open', () => {
     expect(location.origin).not.toBe('https://teed.fgwilt1.workers.dev');
-    expect(codeMessage('Vero Beach 2027', 'VERO-FW27-K4M9')).toContain(
-      'Open https://teed.fgwilt1.workers.dev, add it',
+    expect(linkMessage('Vero Beach 2027', 'K4M9QT')).toContain(
+      'https://teed.fgwilt1.workers.dev/join/K4M9QT',
     );
-    expect(spectatorMessage('Vero Beach 2027', 'VERO-WATCH-7Q3D')).toContain(
-      'Open https://teed.fgwilt1.workers.dev and enter',
+    expect(spectatorMessage('Vero Beach 2027', 'W7Q3DX')).toBe(
+      'Follow Vero Beach 2027 live. Tap to open Teed: https://teed.fgwilt1.workers.dev/join/W7Q3DX',
+    );
+  });
+
+  it('puts a code issued in the old style into the link without its dashes', () => {
+    expect(joinLink('pines-fw26-k4m9', 'https://teed.example')).toBe(
+      'https://teed.example/join/PINESFW26K4M9',
     );
   });
 
   it('builds an sms: link with the number and the message filled in', () => {
-    const link = smsLink('+17725550101', 'Your Teed code: VERO-FW27-K4M9 ⛳');
+    const link = smsLink('+17725550101', linkMessage('Vero Beach 2027', 'K4M9QT'));
     expect(link.startsWith('sms:+17725550101?&body=')).toBe(true);
-    expect(decodeURIComponent(link.split('body=')[1])).toBe('Your Teed code: VERO-FW27-K4M9 ⛳');
+    expect(decodeURIComponent(link.split('body=')[1])).toContain('/join/K4M9QT');
   });
 
   it('accepts phone numbers however they are typed', () => {
     expect(tidyPhone('(772) 555-0101')).toBe('+17725550101');
     expect(tidyPhone('1 772 555 0101')).toBe('+17725550101');
-    expect(tidyPhone('+44 7700 900123')).toBe('+447700900123');
+    expect(tidyPhone('+44 20 7946 0958')).toBe('+442079460958');
   });
 
   it('refuses things that are not phone numbers', () => {
-    expect(tidyPhone('555-0101')).toBeNull();
     expect(tidyPhone('call me')).toBeNull();
+    expect(tidyPhone('555-0101')).toBeNull();
     expect(tidyPhone('')).toBeNull();
   });
 
   it('shows US numbers the usual way', () => {
     expect(formatPhone('+17725550101')).toBe('(772) 555-0101');
-    expect(formatPhone('+447700900123')).toBe('+447700900123');
+    expect(formatPhone('+442079460958')).toBe('+442079460958');
   });
 
   it('suggests initials from a name', () => {
     expect(initialsFor('Fritz Wiltman')).toBe('FW');
-    expect(initialsFor('von')).toBe('V');
-    expect(initialsFor('Mary-Kate O’Neil')).toBe('MKO');
+    expect(initialsFor('Von')).toBe('V');
+    expect(initialsFor('Mary-Jane O’Neil')).toBe('MJO');
   });
 });

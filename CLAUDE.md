@@ -1,6 +1,6 @@
 # Teed
 
-Live scoring and trip hub for golf trips. Players log in with a personal code, score hole by hole,
+Live scoring and trip hub for golf trips. Players log in from a texted link (a personal code), score hole by hole,
 and follow live leaderboards; an admin sets up trips, rounds, formats, pairings and trip info.
 
 - Build plan: `docs/plan.md` (copy of https://claude.ai/artifact/EjFNgELk12pGAnNS5CpSZu, the master)
@@ -10,7 +10,7 @@ and follow live leaderboards; an admin sets up trips, rounds, formats, pairings 
 ## Stack
 
 - **Angular** (standalone components, signals) as a **PWA** (`@angular/pwa`), phone-first.
-- **Supabase**: Postgres, Realtime, Auth (anonymous sign-in for players, email magic link for admins),
+- **Supabase**: Postgres, Realtime, Auth (anonymous sign-in for players, email sign-in for the organizer),
   Edge Functions, Storage (course photos). Free tier.
 - **Cloudflare Worker with static assets** serves the built app (`wrangler.jsonc`). Free tier.
 - **Web Push** (VAPID) sent from a Supabase Edge Function.
@@ -23,6 +23,9 @@ src/                      Angular app
   app/admin/              my trips, admin home, trip details, roster, rounds, groups, courses, itinerary, proposals
   app/scoring/            pure TypeScript scoring engine, one module per format (no Angular imports)
   app/core/               supabase client, auth, offline queue, theme
+  app/core/ui/            the design system: every card, button, row, tab bar and sheet (ui-*)
+  app/dev/                /dev/ui, every component in every state, light beside dark (not linked anywhere)
+  styles/tokens.scss      Theme "Tour" tokens: colors (light and dark), shape, spacing
 supabase/migrations/      SQL schema, RLS policies, functions (one file per change)
 supabase/functions/       edge functions: redeem-code, notify, itinerary-propose
 supabase/seed/            Southern Pines 2026 test trip, course library seed list
@@ -43,9 +46,19 @@ docs/                     notes; wireframes live at the link above
   reproduce the old site's standings and settle-up (90% allowance, strokes off the low man).
 - **Offline first on the course.** Score entry works with no signal and syncs without duplicates.
 - **Zero-fiddle scoring.** App opens to the next unscored hole; your rows start at par; big tap targets.
-- **Theme A "Scorecard"** is the default: Bitter headings, IBM Plex Mono numbers, Libre Franklin body,
-  card stock + pine green, dark frames with light inner lines, red for under par, floating pill nav,
-  light and dark modes. Themes change tokens only, never layout.
+- **Theme "Tour"** is the default: Barlow Semi Condensed headings and big numbers, Barlow body, tabular figures
+  everywhere; pale green-gray background, white cards with a soft shadow, a pine-green header band; red only for
+  under par, "Not paid", urgent alerts and the live dot; a docked bottom tab bar with icons, the active tab on a
+  tinted pill. Light and dark follow the phone's setting with a manual override. Themes change tokens only, never
+  layout. Screens compose components from `app/core/ui`; never restyle a card or button inline.
+- **Only pertinent info on screen.** No labels that explain how the app works. No app-computed drive or leave times.
+- **Day headers** always read `Label · Ddd, Mon D` (`Round 3 · Sun, Oct 11`, `Travel day · Thu, Oct 8`).
+- **Screens render data, never a format.** Cards, leaderboards and breakdowns take rows that each format plug-in
+  supplies. No screen hard-codes Sixes, Nassau or any other format.
+- **Loading:** skeletons hold the layout for content. Spinners only appear inside a button or a sync line, never
+  full screen.
+- **Browser-first.** Everything works in Safari without installing. "Add to Home Screen" is strongly suggested
+  but always skippable.
 
 ## Workflow
 

@@ -1,18 +1,21 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
+import { SessionService } from '../core/session';
+import { UiCard } from '../core/ui';
+import { PlayerHeader } from './player-header';
 
 /** Leaderboard. Stub: built in M6. */
 @Component({
   selector: 'app-board',
+  imports: [PlayerHeader, UiCard],
   template: `
-    <main class="page">
-      <header>
-        <p class="label">Board</p>
-        <h1>Leaderboard</h1>
-      </header>
-      <section class="card pad">
+    <app-player-header [label]="session()?.trip?.name" title="Leaderboard" />
+    <main class="content">
+      <ui-card pad>
         <p>Live round and trip standings will be here.</p>
-      </section>
+      </ui-card>
     </main>
   `,
 })
-export class Board {}
+export class Board {
+  protected readonly session = inject(SessionService).session;
+}

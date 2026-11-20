@@ -1,60 +1,46 @@
 import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter, map, scan, startWith } from 'rxjs';
+import { Tab, UiTabBar } from '../core/ui';
+
+export type OrganizerTab = 'overview' | 'rounds' | 'people' | 'itinerary';
 
 interface Place {
-  /** Which tab is lit. */
-  tab: 'trips' | 'trip' | 'roster' | 'courses';
-  /** The trip in hand, if any. It stays selected while you look at the course library. */
+  /** Which tab is lit. None on My trips and in the course library. */
+  tab: OrganizerTab | null;
+  /** The trip in hand, if any. It stays in hand while you look at the course library. */
   tripId: string | null;
 }
 
-/** Works out where we are from the address. `previous` carries the selected trip into the course library. */
+const TAB_FOR: Record<string, OrganizerTab> = {
+  rounds: 'rounds',
+  roster: 'people',
+  itinerary: 'itinerary',
+};
+
+/** Works out where we are from the address. `previous` carries the trip into the course library. */
 export function placeFor(url: string, previous: Place | null): Place {
   const path = url.split(/[?#]/)[0];
   const trip = /^\/admin\/trips\/([^/]+)(?:\/([^/]+))?/.exec(path);
   if (trip && trip[1] !== 'new')
-    return { tab: trip[2] === 'roster' ? 'roster' : 'trip', tripId: trip[1] };
-  if (path.startsWith('/admin/courses'))
-    return { tab: 'courses', tripId: previous?.tripId ?? null };
-  return { tab: 'trips', tripId: null };
+    return { tab: TAB_FOR[trip[2] ?? ''] ?? 'overview', tripId: trip[1] };
+  if (path.startsWith('/admin/courses')) return { tab: null, tripId: previous?.tripId ?? null };
+  return { tab: null, tripId: null };
 }
 
-/** The organizer frame: the current screen with the floating pill nav over it. */
+/**
+ * The organizer frame: the current screen and, with a trip in hand, the organizer tab bar
+ * (Overview · Rounds · People · Itinerary). My trips has no tab bar.
+ */
 @Component({
   selector: 'app-admin-shell',
-  imports: [RouterOutlet, RouterLink],
+  imports: [RouterOutlet, UiTabBar],
   template: `
-    <div class="with-nav"><router-outlet /></div>
-    <nav class="pill-nav" aria-label="Organizer">
-      <a
-        routerLink="/admin"
-        [class.active]="place().tab === 'trips'"
-        [attr.aria-current]="place().tab === 'trips' ? 'page' : null"
-        >Trips</a
-      >
-      @if (place().tripId; as id) {
-        <a
-          [routerLink]="['/admin/trips', id]"
-          [class.active]="place().tab === 'trip'"
-          [attr.aria-current]="place().tab === 'trip' ? 'page' : null"
-          >Trip</a
-        >
-        <a
-          [routerLink]="['/admin/trips', id, 'roster']"
-          [class.active]="place().tab === 'roster'"
-          [attr.aria-current]="place().tab === 'roster' ? 'page' : null"
-          >Roster</a
-        >
-      }
-      <a
-        routerLink="/admin/courses"
-        [class.active]="place().tab === 'courses'"
-        [attr.aria-current]="place().tab === 'courses' ? 'page' : null"
-        >Courses</a
-      >
-    </nav>
+    <div class="screen" [class.with-tabs]="tabs().length"><router-outlet /></div>
+    @if (tabs().length) {
+      <ui-tab-bar [tabs]="tabs()" [active]="place().tab" label="Organizer" />
+    }
   `,
 })
 export class AdminShell {
@@ -71,5 +57,15 @@ export class AdminShell {
     { initialValue: placeFor(this.router.url, null) },
   );
 
-  protected readonly hasTrip = computed(() => !!this.place().tripId);
+  protected readonly tabs = computed<Tab[]>(() => {
+    const id = this.place().tripId;
+    if (!id) return [];
+    const base = ['/admin/trips', id];
+    return [
+      { key: 'overview', label: 'Overview', icon: 'overview', link: base },
+      { key: 'rounds', label: 'Rounds', icon: 'flag', link: [...base, 'rounds'] },
+      { key: 'people', label: 'People', icon: 'people', link: [...base, 'roster'] },
+      { key: 'itinerary', label: 'Itinerary', icon: 'calendar', link: [...base, 'itinerary'] },
+    ];
+  });
 }
