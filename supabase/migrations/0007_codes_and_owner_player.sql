@@ -1,8 +1,8 @@
 -- M3.5: six-character codes, and the owner playing on their organizer account.
 -- No changes to any table.
 --
---   * New login codes are six random characters (K4M9QT), unique across every trip and across
---     player and spectator codes. Codes already issued (PINES-FW26-K4M9) keep working.
+--   * New login codes are six random characters (K4M9QT, stored as K4M-9QT), unique across every
+--     trip and across player and spectator codes. Codes already issued (PINES-FW26-K4M9) keep working.
 --   * "This is me" (trips.owner_player_id) now links the owner's player to their organizer
 --     account: signed in by email, the owner is that player for everything a player can do, so
 --     one sign-in serves both the player and the organizer screens. Only the trip's own owner
@@ -12,19 +12,23 @@
 
 -- Six characters from the alphabet without look-alikes (no I, O, 0, 1): about a billion
 -- combinations. Checked against both code tables, so a code is unique everywhere.
+--
+-- Stored with a dash in the middle (K4M-9QT), which is the form the code columns have always
+-- required. The dash is not part of the code: redeem_code ignores dashes, and the app shows,
+-- links and accepts the six characters without it.
 create function private.new_login_code() returns text
 language plpgsql volatile security definer set search_path = ''
 as $$
 declare
-  v_code text;
+  v_six text;
 begin
   for attempt in 1..20 loop
     select string_agg(substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 1 + get_byte(r.b, i) % 32, 1), '')
-      into v_code
+      into v_six
       from (select uuid_send(gen_random_uuid()) as b) as r, generate_series(0, 5) as i;
-    if not exists (select 1 from public.player_codes c where replace(c.code, '-', '') = v_code)
-       and not exists (select 1 from public.spectator_codes c where replace(c.code, '-', '') = v_code) then
-      return v_code;
+    if not exists (select 1 from public.player_codes c where replace(c.code, '-', '') = v_six)
+       and not exists (select 1 from public.spectator_codes c where replace(c.code, '-', '') = v_six) then
+      return substr(v_six, 1, 3) || '-' || substr(v_six, 4, 3);
     end if;
   end loop;
   raise exception 'Could not generate a unique code';

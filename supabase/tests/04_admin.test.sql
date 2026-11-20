@@ -37,7 +37,7 @@ select lives_ok(
        (tests.id('fritz'), tests.id('vero'), 'Fritz', 'FW', 1), (tests.id('ben'), tests.id('vero'), 'Ben', 'BK', 2),
        (tests.id('cal'), tests.id('vero'), 'Cal', 'CM', 3), (tests.id('dom'), tests.id('vero'), 'Dom', 'DR', 4) $$,
   'adds four players');
-select matches(public.regenerate_player_code(tests.id('fritz')), '^[A-HJ-NP-Z2-9]{6}$', 'issues a code for a new player');
+select matches(public.regenerate_player_code(tests.id('fritz')), '^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$', 'issues a code for a new player');
 select lives_ok(
   $$ select public.regenerate_player_code(p.id) from public.players p where p.trip_id = tests.id('vero') and p.name <> 'Fritz' $$,
   'and for the rest');
@@ -58,7 +58,7 @@ select lives_ok(
 select lives_ok($$ update public.players set role = 'co_admin' where id = tests.id('cal') $$, 'makes a player co-admin');
 select lives_ok($$ update public.trips set owner_player_id = tests.id('fritz') where id = tests.id('vero') $$, 'marks which player is the owner');
 
-select matches(public.issue_spectator_code(tests.id('vero')), '^[A-HJ-NP-Z2-9]{6}$', 'creates the spectator code');
+select matches(public.issue_spectator_code(tests.id('vero')), '^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$', 'creates the spectator code');
 select lives_ok($$ update public.spectator_codes set enabled = false where trip_id = tests.id('vero') $$, 'turns the spectator code off');
 select lives_ok($$ update public.spectator_codes set enabled = true where trip_id = tests.id('vero') $$, 'and on again');
 
@@ -111,7 +111,7 @@ create temp table old_code as select code from public.player_codes where player_
 grant select on old_code to public;
 
 select tests.as_user('organizer');
-select matches(public.replace_player(tests.id('ben'), ' Eli ', 'ep'), '^[A-HJ-NP-Z2-9]{6}$', 'replacing a player returns a code for the new person');
+select matches(public.replace_player(tests.id('ben'), ' Eli ', 'ep'), '^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$', 'replacing a player returns a code for the new person');
 select results_eq(
   $$ select name, initials, handicap_index, index_entered_at, sort_order from public.players where id = tests.id('ben') $$,
   $$ values ('Eli', 'EP', null::numeric, null::timestamptz, 2::smallint) $$,

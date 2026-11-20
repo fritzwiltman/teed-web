@@ -1,4 +1,11 @@
-import { CODE_ALPHABET, codeChar, codeFromClipboard, looksLikeCode, tidyCode } from './code';
+import {
+  CODE_ALPHABET,
+  codeChar,
+  displayCode,
+  codeFromClipboard,
+  looksLikeCode,
+  tidyCode,
+} from './code';
 
 describe('tidyCode', () => {
   it('capitalises what is typed', () => {
@@ -64,5 +71,16 @@ describe('codeChar', () => {
     expect(codeChar('K4')).toBe('4');
     expect(codeChar('-')).toBe('');
     expect(codeChar('')).toBe('');
+  });
+});
+
+describe('displayCode', () => {
+  it('shows a six-character code without the dash it is stored with', () => {
+    expect(displayCode('K4M-9QT')).toBe('K4M9QT');
+    expect(displayCode('K4M9QT')).toBe('K4M9QT');
+  });
+
+  it('leaves a code issued in the old style as it is', () => {
+    expect(displayCode('PINES-FW26-K4M9')).toBe('PINES-FW26-K4M9');
   });
 });

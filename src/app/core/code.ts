@@ -7,6 +7,15 @@ export const CODE_LENGTH = 6;
 
 const MAX_LENGTH = 32;
 
+/**
+ * A code as people see it. A six-character code is stored with a dash in the middle (K4M-9QT);
+ * the dash isn't part of it, so it is shown without. Older codes are shown as they are.
+ */
+export function displayCode(code: string): string {
+  const bare = code.replace(/-/g, '');
+  return bare.length === CODE_LENGTH ? bare : code;
+}
+
 /** A code as pasted or typed, made tidy: capitals, with spaces turned into dashes. */
 export function tidyCode(raw: string): string {
   return raw

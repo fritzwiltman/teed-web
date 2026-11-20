@@ -156,7 +156,8 @@ the Data API doesn't expose)
   a player (or a read-only spectator) on a **live** trip and returns the trip and player. The link is a
   `trip_sessions` row; the app also caches it so it opens with no signal.
 - Codes: 6 random characters (`K4M9QT`, no I/O/0/1), unique across every trip and across player and spectator
-  codes; typed or pasted in any case. Codes issued before M3.5 (`PINES-FW26-K4M9`) keep working. Regenerating or
+  codes; typed or pasted in any case. Stored as `K4M-9QT` (the code columns require a dash); the dash is not
+  part of the code and is never shown or needed. Codes issued before M3.5 (`PINES-FW26-K4M9`) keep working. Regenerating or
   revoking a code signs out every phone that used it.
 - Join link: the organizer texts each player `https://teed.fgwilt1.workers.dev/join/<code>` (always the
   production address). Opening it logs the phone in and goes to the skippable "Add to Home Screen" step. Either

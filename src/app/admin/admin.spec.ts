@@ -42,7 +42,7 @@ const player = (over: Partial<RosterPlayer>): RosterPlayer => ({
   handicap_index: 18.6,
   index_entered_at: '2027-01-01',
   sort_order: 1,
-  code: 'K4M9QT',
+  code: 'K4M-9QT',
   phone: '+17725550101',
   ...over,
 });
@@ -727,7 +727,7 @@ describe('organizer area', () => {
       TestBed.resetTestingModule();
       const some = await boot('/admin/trips/vero/roster', 'organizer', {
         ...withRoster,
-        spectatorCode: vi.fn(async () => ({ id: 's1', code: 'W7Q3DX', enabled: true })),
+        spectatorCode: vi.fn(async () => ({ id: 's1', code: 'W7Q-3DX', enabled: true })),
       });
       const card = some.page().querySelector('[aria-label=Spectators]')!;
       expect(card.textContent).toContain('W7Q3DX');

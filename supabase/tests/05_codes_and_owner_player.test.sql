@@ -74,25 +74,28 @@ insert into public.tasks (id, trip_id, title, player_can_complete) values
 
 -- ── Six-character codes ─────────────────────────────────────────────────────
 
-select matches(private.new_login_code(), '^[A-HJ-NP-Z2-9]{6}$', 'a new code is six characters with no I, O, 0 or 1');
+select matches(private.new_login_code(), '^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$', 'a new code is six characters with no I, O, 0 or 1, stored with a dash in the middle');
 select is(
-  (select count(*) filter (where c ~ '^[A-HJ-NP-Z2-9]{6}$') from (select private.new_login_code() as c from generate_series(1, 2000)) as s),
+  (select count(*) filter (where c ~ '^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$') from (select private.new_login_code() as c from generate_series(1, 2000)) as s),
   2000::bigint, 'so are 2,000 of them');
 select cmp_ok(
   (select count(distinct c) from (select private.new_login_code() as c from generate_series(1, 2000)) as s),
   '>=', 1999::bigint, '2,000 codes in a row do not repeat');
 select cmp_ok(
-  (select count(distinct substr(c, n, 1)) from (select private.new_login_code() as c from generate_series(1, 2000)) as s, generate_series(1, 6) as n),
+  (select count(distinct substr(c, n, 1)) from (select replace(private.new_login_code(), '-', '') as c from generate_series(1, 2000)) as s, generate_series(1, 6) as n),
   '=', 32::bigint, 'every character of the alphabet turns up');
 
 select tests.as_user('owner');
-select matches(public.regenerate_player_code(tests.id('fritz')), '^[A-HJ-NP-Z2-9]{6}$', 'a player''s new code is six characters');
-select matches(public.issue_spectator_code(tests.id('vero')), '^[A-HJ-NP-Z2-9]{6}$', 'so is the spectator code');
+select matches(public.regenerate_player_code(tests.id('fritz')), '^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$', 'a player''s new code is six characters');
+select matches(public.issue_spectator_code(tests.id('vero')), '^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$', 'so is the spectator code');
 select tests.as_postgres();
 
 select is(
-  public.redeem_code(lower((select code from public.player_codes where player_id = tests.id('fritz'))), tests.id('user:phone-new'), '10.0.0.1') ->> 'status',
-  'ok', 'a six-character code logs in, in any case');
+  public.redeem_code(lower(replace((select code from public.player_codes where player_id = tests.id('fritz')), '-', '')), tests.id('user:phone-new'), '10.0.0.1') ->> 'status',
+  'ok', 'the six characters log in with no dash, in any case');
+select is(
+  public.redeem_code((select code from public.player_codes where player_id = tests.id('fritz')), tests.id('user:phone-new'), '10.0.0.1') ->> 'status',
+  'ok', '...and with the dash');
 select is(
   public.redeem_code('VERO-BK27-Q2X7', tests.id('user:phone-new'), '10.0.0.1') -> 'player' ->> 'name',
   'Ben', 'a long code issued earlier still logs in');
@@ -185,7 +188,7 @@ select throws_ok(
   $$ select public.issue_spectator_code(tests.id('vero')) $$,
   '42501', null, '...or a spectator code');
 select throws_ok(
-  $$ insert into public.player_codes (player_id, code) values (tests.id('dom'), 'ABC234') $$,
+  $$ insert into public.player_codes (player_id, code) values (tests.id('dom'), 'ABC-234') $$,
   '42501', null, '...or write one in by hand');
 select throws_ok(
   $$ select public.replace_player(tests.id('dom'), 'Eli', 'EP') $$,

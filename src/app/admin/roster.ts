@@ -12,6 +12,7 @@ import {
   UiSkeleton,
   UiSwitch,
 } from '../core/ui';
+import { displayCode } from '../core/code';
 import { AdminAuth } from './auth';
 import { OrganizerHeader } from './organizer-header';
 import {
@@ -123,7 +124,7 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
         <ui-card aria-label="Spectators">
           <ui-section-head title="Spectators" />
           @if (spectator(); as s) {
-            <ui-list-row [title]="s.code">
+            <ui-list-row [title]="shown(s.code)">
               @if (s.enabled) {
                 <button ui-button size="small" type="button" (click)="shareSpectator(s)">
                   {{ copied() === s.id ? 'Copied' : 'Share link' }}
@@ -358,10 +359,15 @@ export class Roster {
 
   /** "K4M9QT · Index 18.6": the code (owner only) and the handicap index. */
   protected detail(player: RosterPlayer): string {
-    return [player.code, player.handicap_index === null ? null : `Index ${player.handicap_index}`]
+    return [
+      player.code && displayCode(player.code),
+      player.handicap_index === null ? null : `Index ${player.handicap_index}`,
+    ]
       .filter(Boolean)
       .join(' · ');
   }
+
+  protected readonly shown = displayCode;
 
   protected closeSheet(): void {
     this.open.set(null);
