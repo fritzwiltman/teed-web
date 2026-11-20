@@ -77,6 +77,7 @@ the Data API doesn't expose)
 | `players` | trip, name, initials, role (player/co-admin), handicap index, index entered/locked at. No codes or GHIN numbers here: everyone on the trip can read this table |
 | `player_codes` | player, code, issued at. Trip admins only |
 | `player_ghin` | player, GHIN number. Players and admins, never spectators |
+| `player_contacts` | player, mobile number (for texting their code). Owner only |
 | `spectator_codes` | trip, code, label, enabled. Trip admins only |
 | `trip_sessions` | auth user, trip, player **or** spectator code. Written only by `redeem-code`. One player can have several (Safari and the home-screen app are separate anonymous users) |
 | `courses` | name, short name, location, architect, year, description, links, photo, source + ratings_checked_at |
@@ -104,6 +105,10 @@ the Data API doesn't expose)
 - Owner (Fritz): email magic link, listed in `app_admins`. Owner-only: creating and deleting trips, the course
   library, login codes, deleting players or rounds. `trips.owner_player_id` marks the owner's player so trip home
   can show "Owner"; it grants nothing, and the owner's player code logs in with ordinary player rights.
+- Organizer sign-in is separate from the player login on the same phone (its own stored session): email and
+  password, with "Email me a link instead" as the second option (a link opens in Safari, never in the installed
+  app, so the password is the way in there). The password is set from My trips. No new accounts are created
+  from the sign-in screen.
 - Co-admins: any player, per trip, acting through their code: pairings, score fixes, rounds and trip info.
 - RLS everywhere: players read only their trip (once it is live or final) and write scores and presses only for
   their group while the trip is live and the round isn't final; spectators read-only and never see GHIN numbers,
@@ -118,8 +123,9 @@ old code, issues a new one, and keeps the slot's tee times, group and team.
 (after a chosen round, by money/points/net); then tap two names to swap. Pairings can stay TBD. Groups lock when the
 round starts (admin can still change).
 
-**Courses:** reusable library; import from OpenGolfAPI (free, ODbL, attribution required) with tees, rating, slope,
-par, stroke index; Refresh re-pulls and flags changes; trip courses re-checked ~2 weeks out; spot-check against the
+**Courses:** reusable library; import from OpenGolfAPI (free, no key, ODbL; shown as "Course data: OpenGolf")
+straight from the admin screen (no edge function needed) with tees, rating, slope, par, stroke index; women's
+ratings import as separate tees ("White (W)"); Refresh re-pulls and flags changes; trip courses re-checked ~2 weeks out; spot-check against the
 USGA Course Rating and Slope Database before the handicap lock. Photos in Supabase Storage.
 
 **Handicaps:** GHIN has no public API; players enter index in check-in, admin spot-checks. Course handicap =
@@ -204,10 +210,9 @@ new leader (only after every group is through 2 holes, judged on score to par); 
 | Palm Beach Gardens, FL | PGA National: Champion, Fazio, Palmer |
 | Sandhills, NC | Southern Pines, Mid Pines, Pine Needles, Tobacco Road, Tot Hill Farm |
 | Pinehurst, NC | No. 2, No. 3, No. 4, No. 5, No. 7, No. 8, No. 10 |
-| Dormie Network | ArborLinks (NE), Ballyhack (VA), Briggs Ranch (TX), Dormie Club (NC), Hidden Creek (NJ), Hunting Hawk (VA); GrayBull (NE) when open; confirm roster on import |
-| Kohler, WI | Whistling Straits: Straits, Irish; Blackwolf Run: River, Meadow Valleys |
-| Near Kohler, WI | Erin Hills; Lawsonia: Links, Woodlands |
-| Sand Valley, WI | Sand Valley, Mammoth Dunes, Lido, Sedge Valley, The Sandbox (par 3) |
+| Dormie Network | Ballyhack (VA), Briggs Ranch (TX), Dormie Club (NC), Hidden Creek (NJ), Hunting Hawk (VA) |
+| Kohler, WI | Whistling Straits: Straits |
+| Near Kohler, WI | Erin Hills |
 
 ## Theme
 

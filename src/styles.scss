@@ -138,27 +138,46 @@ a {
   gap: 1rem;
 }
 
-// Scorecard frame: dark outer border, light lines between rows.
+// Scorecard frame: dark outer border; light ruled lines that run frame to frame.
+// Padding lives inside the cells (.row, .cell), never on the card itself.
 .card {
   background: var(--surface);
-  border: 2px solid var(--frame);
+  border: 1.5px solid var(--frame);
   border-radius: var(--radius);
+  overflow: hidden;
+}
+// A card that is one block of content rather than ruled rows.
+.card.pad {
   padding: 1rem;
 }
 .card > .row {
-  padding: 0.7rem 0;
+  padding: 0.75rem 1rem;
   border-top: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 1rem;
 }
-.card > .row:first-child {
+.card > :first-child {
   border-top: 0;
-  padding-top: 0;
 }
-.card > .row:last-child {
-  padding-bottom: 0;
+// A strip of equal cells with light vertical rules between them.
+.card > .strip {
+  display: flex;
+  border-top: 1px solid var(--line);
+}
+.strip > .cell {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.6rem 0.5rem;
+  border-left: 1px solid var(--line);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.strip > .cell:first-child {
+  border-left: 0;
 }
 
 // Small mono caps label, like the print on a scorecard.
@@ -203,4 +222,225 @@ a {
   color: var(--ink);
   border-color: var(--frame);
   font-weight: 500;
+}
+
+// ── Forms and lists (organizer screens) ──────────────────────────────────────
+
+:root {
+  --amber: #8a5a00;
+  --amber-bg: #f6e3b4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --amber: #f2c46b;
+    --amber-bg: #3b2e12;
+  }
+}
+:root[data-theme='dark'] {
+  --amber: #f2c46b;
+  --amber-bg: #3b2e12;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0 0.7rem;
+  border: 1.5px solid var(--frame);
+  border-radius: var(--radius);
+  background: var(--field);
+  color: var(--ink);
+  font: 400 1rem var(--font-body); // 16px or more, so iOS doesn't zoom on focus
+}
+textarea.input {
+  padding: 0.6rem 0.7rem;
+  min-height: 6rem;
+  resize: vertical;
+}
+.input.mono {
+  font-family: var(--font-mono);
+}
+.input:disabled {
+  opacity: 0.6;
+}
+
+// A whole row you can tap.
+.card > a.row,
+.card > button.row {
+  width: 100%;
+  min-height: var(--tap);
+  align-items: center;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.card > .row.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.6rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  font: 500 0.68rem var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge.draft {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+.badge.live {
+  color: var(--on-pine);
+  background: var(--pine);
+  border-color: var(--pine);
+}
+.badge.final {
+  color: var(--muted);
+}
+
+.banner {
+  padding: 0.75rem 1rem;
+  border: 1.5px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--amber-bg);
+  color: var(--amber);
+  font-weight: 500;
+}
+
+.error-text {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--muted);
+  font: 500 0.72rem var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.button.small {
+  width: auto;
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  font-size: 0.95rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.link-button {
+  min-height: 2.75rem;
+  padding: 0 0.25rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 500 0.9rem var(--font-body);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+// ── Floating pill nav (player and organizer) ─────────────────────────────────
+// The only fully rounded things in Theme A.
+
+.with-nav {
+  // room for the nav, so the last thing on a page is never underneath it
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+.pill-nav {
+  position: fixed;
+  left: 50%;
+  bottom: calc(0.9rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  width: min(calc(100% - 1.5rem), 24rem);
+  background: var(--surface);
+  border: 1.5px solid var(--frame);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+.pill-nav a {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.9rem;
+  border-radius: 999px;
+  font: 500 0.8rem var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink);
+  touch-action: manipulation;
+}
+.pill-nav a.active {
+  background: var(--pine);
+  color: var(--on-pine);
+}
+
+// ── Radio buttons and date fields ────────────────────────────────────────────
+
+// Drawn by hand so an unselected or disabled option is plainly an empty ring.
+input[type='radio'] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin: 0;
+  border: 1.5px solid var(--frame);
+  border-radius: 50%;
+  background: transparent;
+}
+input[type='radio']:checked::before {
+  content: '';
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--pine);
+}
+input[type='radio']:disabled {
+  opacity: 0.35;
+}
+
+// iOS gives date inputs a width of their own; make them obey the layout like any other field.
+input[type='date'].input {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+}
+input[type='date'].input::-webkit-date-and-time-value {
+  text-align: left;
 }

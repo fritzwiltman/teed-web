@@ -12,7 +12,7 @@ import { ThemeChoice, ThemeService } from '../core/theme';
         <h1>{{ session()?.trip?.name }}</h1>
       </header>
 
-      <section class="card">
+      <section class="card pad">
         <p>The itinerary, courses, logistics and players will be here.</p>
       </section>
 

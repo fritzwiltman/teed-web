@@ -89,33 +89,60 @@ describe('App', () => {
     courses: { name: `Course ${round_number}` },
     tees: { name: 'White' },
     round_formats: [{ format_key: 'nassau' }],
+    groups: [] as unknown[],
   });
   const iso = (offsetDays: number) => {
     const d = new Date();
     d.setDate(d.getDate() + offsetDays);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
-  const roundLabel = (el: HTMLElement) => el.querySelector('.round-label')?.textContent?.trim();
+  const roundLabel = (el: HTMLElement) =>
+    el.querySelector('[aria-label=Round] .label')?.textContent?.trim();
 
   describe('round card', () => {
-    it("labels today's round with just Today and the round number", async () => {
+    const cells = (el: HTMLElement) =>
+      [...el.querySelectorAll('.strip .cell')].map((c) => c.textContent?.trim());
+
+    it("labels today's round with Today in place of the date", async () => {
       const { el } = await boot('/home', SAVED, [
         round(1, iso(-1)),
         round(2, iso(0)),
         round(3, iso(1)),
       ]);
-      expect(roundLabel(el)).toBe('Today · R2');
+      expect(roundLabel(el)).toBe('Round 2 · Today');
       expect(el.textContent).toContain('Course 2');
     });
 
-    it('shows the next round with its day when there is none today', async () => {
-      const { el } = await boot('/home', SAVED, [round(1, iso(-1)), round(2, '2099-10-09')]);
-      expect(roundLabel(el)).toBe('Next · R2 · Fri, Oct 9');
+    it('labels any other round with its number and date only', async () => {
+      const next = await boot('/home', SAVED, [round(1, iso(-1)), round(2, '2099-10-09')]);
+      expect(roundLabel(next.el)).toBe('Round 2 · Fri, Oct 9');
+      TestBed.resetTestingModule();
+      const past = await boot('/home', SAVED, [round(3, '2026-10-11'), round(4, '2026-10-12')]);
+      expect(roundLabel(past.el)).toBe('Round 4 · Mon, Oct 12');
     });
 
-    it('shows the final round once every round has been played', async () => {
-      const { el } = await boot('/home', SAVED, [round(3, '2026-10-11'), round(4, '2026-10-12')]);
-      expect(roundLabel(el)).toBe('Final round · R4 · Mon, Oct 12');
+    it('has a strip of time, format and tees, and drops the cells that are empty', async () => {
+      const full = await boot('/home', SAVED, [round(1, iso(0))]);
+      expect(cells(full.el)).toEqual(['8:00 AM', 'Nassau', 'White']);
+      TestBed.resetTestingModule();
+      const sparse = await boot('/home', SAVED, [
+        { ...round(1, iso(0)), tee_time: null, round_formats: [] },
+      ]);
+      expect(cells(sparse.el)).toEqual(['White']);
+    });
+
+    it("lists the players in my group, in order, and not other groups'", async () => {
+      const gp = (position: number, id: string, name: string) => ({
+        position,
+        players: { id, name },
+      });
+      const groups = [
+        { group_players: [gp(1, 'p8', 'Jack'), gp(2, 'p9', 'Tom')] },
+        { group_players: [gp(2, 'p2', 'Von'), gp(1, 'p1', 'Fritz')] },
+      ];
+      const { el } = await boot('/home', SAVED, [{ ...round(1, iso(0)), groups }]);
+      expect(el.querySelector('[aria-label=Round]')?.textContent).toContain('Fritz · Von');
+      expect(el.textContent).not.toContain('Jack');
     });
 
     it('is not shown at all when there is no round to show', async () => {

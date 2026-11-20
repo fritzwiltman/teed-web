@@ -14,6 +14,8 @@ const loggedOut: CanActivateFn = () =>
   inject(SessionService).session() ? inject(Router).parseUrl('/home') : true;
 
 export const routes: Routes = [
+  // The organizer area is loaded only when it is visited.
+  { path: 'admin', loadChildren: () => import('./admin/routes').then((m) => m.ADMIN_ROUTES) },
   { path: 'login', component: Login, canActivate: [loggedOut], title: 'Teed' },
   {
     path: '',
