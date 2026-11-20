@@ -1,109 +1,63 @@
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { formatDateRange, formatDay } from '../core/format';
-import { AdminData, AdminError, RoundSummary, Trip } from './data';
+import { formatDateRange, localDate } from '../core/format';
+import { UiBadge, UiButton, UiCard, UiListRow, UiSheet, UiSkeleton, tripStage } from '../core/ui';
+import { AdminAuth } from './auth';
+import { AdminData, AdminError, Trip } from './data';
+import { OrganizerHeader } from './organizer-header';
 
-/** Admin home for one trip. */
+/** Overview: one trip's organizer home. */
 @Component({
   selector: 'app-admin-home',
-  imports: [RouterLink],
+  imports: [RouterLink, OrganizerHeader, UiBadge, UiButton, UiCard, UiListRow, UiSheet, UiSkeleton],
   template: `
-    <main class="page">
-      <a class="back" routerLink="/admin">‹ My trips</a>
+    <app-organizer-header title="Overview" [trip]="trip()" />
+    <main class="content">
       @if (error(); as text) {
         <p class="error-text" role="alert">{{ text }}</p>
       }
       @if (trip(); as t) {
-        <header>
-          <p class="label">{{ t.slug }} · {{ dates(t) }}</p>
-          <h1>{{ t.name }}</h1>
-        </header>
+        <ui-card aria-label="Trip">
+          <ui-list-row [title]="t.name" [detail]="where(t)">
+            <ui-badge [stage]="stage(t)" />
+          </ui-list-row>
+          <a ui-list-row [routerLink]="['details']" title="Trip details" chevron></a>
+        </ui-card>
 
-        @if (t.status === 'draft') {
-          <p class="banner" role="status">
-            Players can't see this trip yet. Codes start working when you set it live.
-          </p>
-        }
-
-        <section class="card">
-          <a class="row" [routerLink]="['details']"
-            ><span>Trip details</span><span aria-hidden="true">›</span></a
-          >
-          <a class="row" [routerLink]="['roster']"
-            ><span>Roster and codes</span><span aria-hidden="true">›</span></a
-          >
-          <a class="row" [routerLink]="['info']"
-            ><span>Trip info</span><span aria-hidden="true">›</span></a
-          >
-        </section>
-
-        @if (rounds().length) {
-          <section class="card" aria-label="Rounds">
-            <div class="row"><span class="label">Rounds</span></div>
-            @for (round of rounds(); track round.id) {
-              <div class="row">
-                <span>
-                  <span class="label">R{{ round.round_number }} · {{ day(round.play_date) }}</span
-                  ><br />
-                  <strong>{{ round.courses?.short_name || round.courses?.name }}</strong>
-                </span>
-                <span class="label">{{ status(round) }}</span>
-              </div>
-            }
-          </section>
-        }
-
-        @if (t.status !== 'final') {
-          <a class="button quiet" [routerLink]="['rounds', 'new']">+ Add round</a>
-        }
-
-        @if (t.status === 'draft') {
-          @if (confirming()) {
-            <section class="card pad confirm">
-              <p>
-                Set <strong>{{ t.name }}</strong> live? Player codes start working straight away.
-              </p>
-              <div class="actions">
-                <button type="button" class="button" [disabled]="busy()" (click)="setLive(t)">
-                  Set live
-                </button>
-                <button type="button" class="button quiet" (click)="confirming.set(false)">
-                  Cancel
-                </button>
-              </div>
-            </section>
-          } @else {
-            <button type="button" class="button" (click)="confirming.set(true)">
-              Set trip live · send codes
-            </button>
+        @if (auth.isOrganizer()) {
+          @if (t.status === 'draft') {
+            <button ui-button type="button" (click)="confirming.set(true)">Publish</button>
           }
+
+          <ui-card>
+            <a ui-list-row routerLink="/admin/courses" title="Course library" chevron></a>
+            <a ui-list-row routerLink="/admin" title="All trips" chevron></a>
+          </ui-card>
         }
-        <a class="player-view" routerLink="/">Player view</a>
+
+        <ui-sheet [(open)]="confirming" label="Publish">
+          <h2>Publish {{ t.name }}?</h2>
+          <p class="detail">Player links start working straight away.</p>
+          <button ui-button type="button" [busy]="busy()" (click)="publish(t)">
+            {{ busy() ? 'Publishing…' : 'Publish' }}
+          </button>
+          <button ui-button type="button" variant="outline" (click)="confirming.set(false)">
+            Not yet
+          </button>
+        </ui-sheet>
+
+        <ui-sheet [(open)]="offering" label="Text links">
+          <h2>{{ t.name }} is published</h2>
+          <p class="detail">Text everyone their link now?</p>
+          <a ui-button [routerLink]="['roster']" [queryParams]="{ send: 'all' }">Text links</a>
+          <button ui-button type="button" variant="outline" (click)="offering.set(false)">
+            Not now
+          </button>
+        </ui-sheet>
+      } @else if (!error()) {
+        <ui-skeleton shape="block" height="120px" />
       }
     </main>
-  `,
-  styles: `
-    h1 {
-      font-size: 2rem;
-      margin-top: 0.3rem;
-    }
-    .player-view {
-      align-self: center;
-      display: inline-flex;
-      align-items: center;
-      min-height: 2.75rem;
-      color: var(--muted);
-      font-size: 0.9rem;
-      text-underline-offset: 3px;
-    }
-    .confirm {
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-    }
-    .confirm .button {
-      flex: 1;
-    }
   `,
 })
 export class AdminHome {
@@ -111,39 +65,37 @@ export class AdminHome {
 
   private readonly data = inject(AdminData);
   private readonly router = inject(Router);
+  protected readonly auth = inject(AdminAuth);
 
   protected readonly trip = signal<Trip | null>(null);
-  protected readonly rounds = signal<RoundSummary[]>([]);
   protected readonly confirming = signal(false);
+  /** After publishing: the separate prompt to text everyone their link. */
+  protected readonly offering = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
-
-  protected readonly day = formatDay;
 
   constructor() {
     effect(() => void this.load(this.id()));
   }
 
-  protected dates(trip: Trip): string {
-    return formatDateRange(trip.start_date, trip.end_date);
+  protected stage(trip: Trip) {
+    return tripStage(trip, localDate());
   }
 
-  protected status(round: RoundSummary): string {
-    if (round.status === 'final') return 'Final';
-    if (round.status === 'live') return 'Live';
-    return round.pairings_tbd ? 'Pairings TBD' : 'Ready';
+  protected where(trip: Trip): string {
+    return [trip.location, formatDateRange(trip.start_date, trip.end_date)]
+      .filter(Boolean)
+      .join(' · ');
   }
 
-  protected async setLive(trip: Trip): Promise<void> {
+  protected async publish(trip: Trip): Promise<void> {
+    if (this.busy()) return;
     this.busy.set(true);
     try {
       this.trip.set(await this.data.updateTrip(trip.id, { status: 'live' }));
-      // Straight on to sending the codes.
-      await this.router.navigate(['/admin/trips', trip.id, 'roster'], {
-        queryParams: { send: 'all' },
-      });
+      this.offering.set(true);
     } catch (e) {
-      this.error.set(e instanceof AdminError ? e.message : "Couldn't set the trip live.");
+      this.error.set(e instanceof AdminError ? e.message : "Couldn't publish the trip.");
     } finally {
       this.busy.set(false);
       this.confirming.set(false);
@@ -152,9 +104,7 @@ export class AdminHome {
 
   private async load(id: string): Promise<void> {
     try {
-      const [trip, rounds] = await Promise.all([this.data.trip(id), this.data.rounds(id)]);
-      this.trip.set(trip);
-      this.rounds.set(rounds);
+      this.trip.set(await this.data.trip(id));
     } catch (e) {
       this.error.set(e instanceof AdminError ? e.message : "Couldn't load that trip.");
     }

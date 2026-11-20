@@ -1,22 +1,19 @@
 import { Component, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
+import { UiButton, UiCard, UiField, UiHeaderBand, UiListRow } from '../core/ui';
 import { DraftStore, blankCourse } from './draft-store';
 import { OPENGOLF_CREDIT, OpenGolfSearchHit, fetchOpenGolf, searchOpenGolf } from './opengolf';
 
 /** Add a course: find it on OpenGolfAPI and import it, or start from a blank card. */
 @Component({
   selector: 'app-course-add',
-  imports: [RouterLink],
+  imports: [UiButton, UiCard, UiField, UiHeaderBand, UiListRow],
   template: `
-    <main class="page">
-      <a class="back" routerLink="/admin/courses">‹ Course library</a>
-      <h1>Add a course</h1>
-
-      <form class="search" (submit)="search($event)" novalidate>
-        <label class="field">
-          <span class="label">Course name</span>
+    <ui-header-band title="Add a course" back="/admin/courses" backLabel="Course library" />
+    <main class="content">
+      <form class="stack" (submit)="search($event)" novalidate>
+        <ui-field label="Course name">
           <input
-            class="input"
             type="search"
             name="q"
             autocomplete="off"
@@ -24,8 +21,8 @@ import { OPENGOLF_CREDIT, OpenGolfSearchHit, fetchOpenGolf, searchOpenGolf } fro
             [value]="query()"
             (input)="query.set(text($event))"
           />
-        </label>
-        <button class="button" type="submit" [disabled]="busy() || query().trim().length < 3">
+        </ui-field>
+        <button ui-button type="submit" [busy]="busy()" [disabled]="query().trim().length < 3">
           {{ busy() ? 'Searching…' : 'Search' }}
         </button>
       </form>
@@ -36,41 +33,29 @@ import { OPENGOLF_CREDIT, OpenGolfSearchHit, fetchOpenGolf, searchOpenGolf } fro
 
       @if (hits(); as list) {
         @if (list.length) {
-          <section class="card" aria-label="Results">
+          <ui-card aria-label="Results">
             @for (hit of list; track hit.id) {
-              <button type="button" class="row" [disabled]="busy()" (click)="pick(hit)">
-                <span class="hit">
-                  <strong>{{ hit.name }}</strong>
-                  <span class="label">{{ place(hit) }}</span>
-                </span>
-                <span class="label">{{ hit.par ? 'Par ' + hit.par : '' }}</span>
-              </button>
+              <button
+                ui-list-row
+                type="button"
+                [title]="hit.name"
+                [detail]="place(hit)"
+                [value]="hit.par ? 'Par ' + hit.par : null"
+                [disabled]="busy()"
+                (click)="pick(hit)"
+              ></button>
             }
-          </section>
+          </ui-card>
         } @else {
           <p>No courses found for "{{ searched() }}".</p>
         }
-        <p class="label">{{ credit }}</p>
+        <p class="detail">{{ credit }}</p>
       }
 
-      <button type="button" class="link-button" (click)="byHand()">Enter a course by hand</button>
+      <button ui-button variant="text" type="button" class="center" (click)="byHand()">
+        Enter a course by hand
+      </button>
     </main>
-  `,
-  styles: `
-    .search {
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-    }
-    .hit {
-      display: flex;
-      flex-direction: column;
-      gap: 0.15rem;
-      min-width: 0;
-    }
-    .hit strong {
-      font-family: var(--font-heading);
-    }
   `,
 })
 export class CourseAdd {

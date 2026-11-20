@@ -45,7 +45,7 @@ Other things worth trying:
 insert into spectator_codes (trip_id, code) select id, 'PINES-WATCH-7Q3D' from trips where slug = 'PINES';
 
 -- Regenerate one player's code (the old one stops working and their phones are signed out)
-update player_codes set code = 'PINES-V26-' || private.random_code_suffix()
+update player_codes set code = private.new_login_code()
 where player_id = (select p.id from players p join trips t on t.id = p.trip_id where t.slug = 'PINES' and p.name = 'Von')
 returning code;
 

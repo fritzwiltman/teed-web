@@ -1,36 +1,52 @@
-import { Component, effect, inject } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Component, computed, effect, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { filter, map } from 'rxjs';
 import { SessionService } from '../core/session';
+import { Tab, UiTabBar } from '../core/ui';
 
-/** The logged-in frame: the current page with the floating pill nav over it. */
+const TABS: Tab[] = [
+  { key: 'home', label: 'Home', icon: 'home', link: '/home' },
+  { key: 'score', label: 'Scorecard', icon: 'card', link: '/score' },
+  { key: 'board', label: 'Board', icon: 'board', link: '/board' },
+  { key: 'trip', label: 'Trip', icon: 'trip', link: '/trip' },
+];
+
+/** The logged-in frame: the current page over the docked tab bar. */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, UiTabBar],
   template: `
-    <div class="with-nav"><router-outlet /></div>
-    <nav class="pill-nav" aria-label="Main">
-      @for (tab of tabs; track tab.path) {
-        <a [routerLink]="tab.path" routerLinkActive="active" ariaCurrentWhenActive="page">{{
-          tab.label
-        }}</a>
-      }
-    </nav>
+    <div class="screen with-tabs"><router-outlet /></div>
+    <ui-tab-bar [tabs]="tabs()" [active]="active()" />
   `,
 })
 export class Shell {
-  protected readonly tabs = [
-    { path: '/home', label: 'Home' },
-    { path: '/score', label: 'Score' },
-    { path: '/board', label: 'Board' },
-    { path: '/trip', label: 'Trip' },
-  ];
+  private readonly sessions = inject(SessionService);
+  private readonly router = inject(Router);
+
+  /** Spectators have no scorecard. */
+  protected readonly tabs = computed(() =>
+    this.sessions.session()?.role === 'spectator' ? TABS.filter((t) => t.key !== 'score') : TABS,
+  );
+
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map((event) => event.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
+  protected readonly active = computed(() => {
+    const first = this.url().split(/[/?#]/)[1];
+    return TABS.some((t) => t.key === first) ? first : null;
+  });
 
   constructor() {
-    const session = inject(SessionService).session;
-    const router = inject(Router);
-    // Logged out (by choice, or because the code was revoked): back to the login screen.
+    // Logged out (by choice, or because the code was revoked): back to login, or for the owner
+    // leaving player mode, back to their trips.
     effect(() => {
-      if (!session()) void router.navigateByUrl('/login');
+      if (!this.sessions.session()) void this.router.navigateByUrl(this.sessions.exitUrl());
     });
   }
 }

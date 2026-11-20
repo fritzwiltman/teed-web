@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionService, TripSession } from './session';
-import { SUPABASE } from './supabase';
+import { ADMIN_SUPABASE, SUPABASE } from './supabase';
 
 const TRIP = {
   id: 't1',
@@ -12,7 +12,13 @@ const TRIP = {
   end_date: '2026-10-12',
 } as const;
 const FRITZ = { id: 'p1', name: 'Fritz', initials: 'FW', role: 'co_admin' } as const;
-const SAVED: TripSession = { role: 'player', trip: TRIP, player: FRITZ };
+const SAVED: TripSession = { role: 'player', trip: TRIP, player: FRITZ, via: 'code' };
+const AS_OWNER: TripSession = {
+  role: 'player',
+  trip: { ...TRIP, owner_player_id: 'p1' },
+  player: FRITZ,
+  via: 'owner',
+};
 const AUTH = { user: { id: 'u1' } };
 
 /** A stand-in for the Supabase client: just the calls SessionService makes. */
@@ -54,9 +60,38 @@ const httpError = (status: number, body: unknown) => ({
   error: { context: new Response(JSON.stringify(body), { status }) },
 });
 
-function setup(fake: ReturnType<typeof fakeSupabase>): SessionService {
-  TestBed.configureTestingModule({ providers: [{ provide: SUPABASE, useValue: fake }] });
+function setup(
+  fake: ReturnType<typeof fakeSupabase>,
+  organizer: unknown = fakeSupabase({}),
+): SessionService {
+  TestBed.configureTestingModule({
+    providers: [
+      { provide: SUPABASE, useValue: fake },
+      { provide: ADMIN_SUPABASE, useValue: organizer },
+    ],
+  });
   return TestBed.inject(SessionService);
+}
+
+/** The organizer client for the owner checks: the trip, then the player. */
+function fakeOrganizer(options: { signedIn?: boolean; trip?: unknown; player?: unknown }) {
+  const answers = [
+    { data: options.trip ?? null, error: null },
+    { data: options.player ?? null, error: null },
+  ];
+  const query: Record<string, unknown> = {};
+  for (const method of ['select', 'eq']) query[method] = vi.fn(() => query);
+  query['maybeSingle'] = vi.fn(async () => answers.shift());
+  return {
+    auth: {
+      getSession: vi.fn(async () => ({
+        data: { session: options.signedIn === false ? null : { user: { id: 'owner-1' } } },
+        error: null,
+      })),
+      signOut: vi.fn(async () => ({ error: null })),
+    },
+    from: vi.fn(() => query),
+  };
 }
 
 describe('SessionService', () => {
@@ -80,6 +115,22 @@ describe('SessionService', () => {
       });
       expect(service.session()).toEqual(SAVED);
       expect(JSON.parse(localStorage.getItem('teed.session')!)).toEqual(SAVED);
+      expect(service.db()).toBe(fake);
+    });
+
+    it('keeps the code, so the Home Screen app can be handed it, and forgets it on logout', async () => {
+      const service = setup(
+        fakeSupabase({
+          invoke: async () => ({
+            data: { status: 'ok', role: 'player', trip: TRIP, player: FRITZ },
+            error: null,
+          }),
+        }),
+      );
+      await service.redeem('K4M9QT');
+      expect(service.code()).toBe('K4M9QT');
+      await service.logout();
+      expect(service.code()).toBeNull();
     });
 
     it("reuses the phone's existing sign-in", async () => {
@@ -95,7 +146,12 @@ describe('SessionService', () => {
       await service.redeem('PINES-WATCH-7Q3D');
 
       expect(fake.auth.signInAnonymously).not.toHaveBeenCalled();
-      expect(service.session()).toEqual({ role: 'spectator', trip: TRIP, player: null });
+      expect(service.session()).toEqual({
+        role: 'spectator',
+        trip: TRIP,
+        player: null,
+        via: 'code',
+      });
     });
 
     it('reports a wrong code and stays logged out', async () => {
@@ -225,6 +281,85 @@ describe('SessionService', () => {
       expect(fake.from).toHaveBeenCalledWith('trip_sessions');
       expect(fake.query['delete']).toHaveBeenCalled();
       expect(fake.auth.signOut).toHaveBeenCalled();
+    });
+  });
+
+  describe('the owner on their organizer sign-in', () => {
+    const OWNED = { ...TRIP, owner_player_id: 'p1', owner_id: 'owner-1' };
+
+    it('opens their trip as their player, reading and writing with the organizer client', () => {
+      const player = fakeSupabase({});
+      const organizer = fakeOrganizer({});
+      const service = setup(player, organizer);
+
+      service.enterAsOwner(AS_OWNER.trip, FRITZ);
+
+      expect(service.session()).toEqual(AS_OWNER);
+      expect(service.db()).toBe(organizer);
+      expect(service.canManage()).toBe(true);
+      expect(player.functions.invoke).not.toHaveBeenCalled(); // no code is redeemed
+      expect(player.auth.signInAnonymously).not.toHaveBeenCalled(); // and no second sign-in
+    });
+
+    it('refreshes the trip and player from the server', async () => {
+      localStorage.setItem('teed.session', JSON.stringify(AS_OWNER));
+      const service = setup(
+        fakeSupabase({}),
+        fakeOrganizer({
+          trip: { ...OWNED, name: 'Pines, renamed' },
+          player: { ...FRITZ, name: 'Fritz W' },
+        }),
+      );
+      await service.revalidate();
+      expect(service.session()?.trip.name).toBe('Pines, renamed');
+      expect(service.session()?.player?.name).toBe('Fritz W');
+      expect(service.session()?.via).toBe('owner');
+      expect(service.session()?.trip).not.toHaveProperty('owner_id');
+    });
+
+    it.each([
+      ['"This is me" was cleared', { ...OWNED, owner_player_id: null }],
+      ['the trip went back to draft', { ...OWNED, status: 'draft' }],
+      ['the trip belongs to someone else now', { ...OWNED, owner_id: 'someone-else' }],
+      ['the trip is gone', null],
+    ])('leaves player mode when %s, back to their trips', async (_why, trip) => {
+      localStorage.setItem('teed.session', JSON.stringify(AS_OWNER));
+      const service = setup(fakeSupabase({}), fakeOrganizer({ trip, player: FRITZ }));
+      await service.revalidate();
+      expect(service.session()).toBeNull();
+      expect(service.exitUrl()).toBe('/admin');
+    });
+
+    it('leaves player mode when the organizer sign-in is gone', async () => {
+      localStorage.setItem('teed.session', JSON.stringify(AS_OWNER));
+      const service = setup(fakeSupabase({}), fakeOrganizer({ signedIn: false }));
+      await service.revalidate();
+      expect(service.session()).toBeNull();
+    });
+
+    it('"All trips" leaves the trip but keeps the organizer signed in', async () => {
+      localStorage.setItem('teed.session', JSON.stringify(AS_OWNER));
+      const player = fakeSupabase({ authSession: AUTH });
+      const organizer = fakeOrganizer({});
+      const service = setup(player, organizer);
+
+      await service.logout();
+
+      expect(service.session()).toBeNull();
+      expect(service.exitUrl()).toBe('/admin');
+      expect(organizer.auth.signOut).not.toHaveBeenCalled();
+      expect(player.auth.signOut).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('who gets the Manage pill', () => {
+    it.each([
+      ['a co-admin', { ...SAVED, player: { ...FRITZ, role: 'co_admin' } }, true],
+      ['a player', { ...SAVED, player: { ...FRITZ, role: 'player' } }, false],
+      ['a spectator', { ...SAVED, role: 'spectator', player: null }, false],
+    ])('%s', (_who, saved, expected) => {
+      localStorage.setItem('teed.session', JSON.stringify(saved));
+      expect(setup(fakeSupabase({})).canManage()).toBe(expected);
     });
   });
 });

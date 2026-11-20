@@ -1,0 +1,101 @@
+// Theme "Tour". Everything visual reads from these tokens; a theme changes tokens only, never
+// layout. Light is the default; dark follows the phone unless data-theme="light|dark" forces a
+// mode. data-theme works on any element (the /dev/ui gallery forces each half), not just <html>.
+
+@mixin light {
+  color-scheme: light;
+  --bg: #f3f5f2; // page background
+  --card: #ffffff; // cards, inputs
+  --ink: #13211a; // main text
+  --ink-2: #3a4a41; // secondary text
+  --muted: #5e6b63; // detail text, inactive tabs
+  --line: #e3e8e3; // row dividers
+  --line-strong: #c9d2cb; // outlines, inactive switch
+  --band: #14532d; // header band
+  --on-band: #ffffff;
+  --fill: #14532d; // primary button, checked controls
+  --on-fill: #ffffff;
+  --accent: #14532d; // links, active tab icon
+  --red: #c0262d; // under par, Not paid
+  --chip: #e6ebe6; // chips, segmented background, skeleton base
+  --me-row: #eaf3ec; // your row in a list
+  --tab-on: #d3e6d8; // active tab pill, selected name button
+  --live: #ff453a; // blinking live dot
+  --warn-edge: #b7791f;
+  --warn-bg: #fdf6e7;
+  --warn-text: #8a5a12;
+  --urgent-edge: #c0262d;
+  --urgent-bg: #fcecec;
+  --urgent-text: #a51f25;
+  --shadow-card: 0 1px 2px rgb(19 33 26 / 8%);
+  --shadow-raised: 0 2px 10px rgb(19 33 26 / 16%);
+  --toast: #13211a;
+  --on-toast: #ffffff;
+}
+
+@mixin dark {
+  color-scheme: dark;
+  --bg: #0b1310;
+  --card: #16201b;
+  --ink: #f2f5f3;
+  --ink-2: #c9d3cd;
+  --muted: #93a199;
+  --line: #26332c;
+  --line-strong: #3a4a41;
+  --band: #12301f;
+  --on-band: #ffffff;
+  --fill: #4cc27a;
+  --on-fill: #06140c;
+  --accent: #6fd596;
+  --red: #ff6f66;
+  --chip: #202c26;
+  --me-row: #1c3326;
+  --tab-on: #1f4430;
+  --live: #ff453a;
+  --warn-edge: #e0a63a;
+  --warn-bg: #2a2213;
+  --warn-text: #f0c064;
+  --urgent-edge: #ff6f66;
+  --urgent-bg: #2e1615;
+  --urgent-text: #ff8f88;
+  --shadow-card: none;
+  --shadow-raised: 0 2px 10px rgb(0 0 0 / 50%);
+  --toast: #f2f5f3;
+  --on-toast: #13211a;
+}
+
+:root {
+  --font-heading: 'Barlow Semi Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --font-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  // Shape
+  --radius-card: 10px;
+  --radius-button: 10px;
+  --radius-chip: 6px;
+  --radius-pill: 999px;
+
+  // Spacing: 4 · 8 · 12 · 16 · 20 · 24
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --gap-cards: 14px;
+  --tap: 44px; // the least anything you tap may be
+  --column: 30rem; // phone-width column on a big screen
+  --tab-bar: 64px; // height of the docked tab bar, without the safe area
+}
+
+:root,
+[data-theme='light'] {
+  @include light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    @include dark;
+  }
+}
+[data-theme='dark'] {
+  @include dark;
+}

@@ -1,8 +1,22 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import {
-  codeMessage,
+  UiButton,
+  UiCard,
+  UiChip,
+  UiField,
+  UiIcon,
+  UiListRow,
+  UiSectionHead,
+  UiSheet,
+  UiSkeleton,
+  UiSwitch,
+} from '../core/ui';
+import { displayCode } from '../core/code';
+import { AdminAuth } from './auth';
+import { OrganizerHeader } from './organizer-header';
+import {
+  linkMessage,
   formatPhone,
   initialsFor,
   smsLink,
@@ -14,245 +28,228 @@ import { AdminData, AdminError, PlayerFields, RosterPlayer, SpectatorCode, Trip 
 type Form = { name: string; initials: string; phone: string; index: string };
 const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
 
-/** Roster and codes: players, their login codes, texting them, and the spectator code. */
+/** People: the players, texting each their link, and the spectator link. */
 @Component({
   selector: 'app-roster',
-  imports: [RouterLink, NgTemplateOutlet],
+  imports: [
+    NgTemplateOutlet,
+    OrganizerHeader,
+    UiButton,
+    UiCard,
+    UiChip,
+    UiField,
+    UiIcon,
+    UiListRow,
+    UiSectionHead,
+    UiSheet,
+    UiSkeleton,
+    UiSwitch,
+  ],
   template: `
-    <main class="page">
-      <a class="back" [routerLink]="['/admin/trips', id()]">‹ Trip</a>
-      <h1>Roster and codes</h1>
-
+    <app-organizer-header title="People" [trip]="trip()" />
+    <main class="content">
       @if (error(); as text) {
         <p class="error-text" role="alert">{{ text }}</p>
       }
 
       @if (sendingTo(); as p) {
-        <section class="card" aria-label="Text all codes">
-          <div class="row">
-            <span class="label">Text codes · {{ sending()! + 1 }} of {{ withCodes().length }}</span>
-          </div>
-          <div class="row">
-            <span class="who">
-              <strong>{{ p.name }}</strong>
-              <span class="mono">{{ p.code }}</span>
-            </span>
-          </div>
-          <div class="row actions">
-            <button type="button" class="button small" (click)="text(p)">
-              {{ p.phone ? 'Text' : 'Share' }} {{ p.name }}
+        <ui-card pad aria-label="Text everyone their link">
+          <ui-section-head
+            title="Text links"
+            [note]="sending()! + 1 + ' of ' + withCodes().length"
+          />
+          <p>{{ p.name }}</p>
+          <div class="actions">
+            <button ui-button size="small" type="button" (click)="text(p)">
+              {{ p.phone ? 'Text' : 'Share with' }} {{ p.name }}
             </button>
-            <button type="button" class="button small quiet" (click)="nextSend()">
+            <button ui-button size="small" variant="outline" type="button" (click)="nextSend()">
               {{ sending()! + 1 < withCodes().length ? 'Next' : 'Done' }}
             </button>
           </div>
-        </section>
-      } @else if (withCodes().length > 1 && !readOnly()) {
-        <button type="button" class="button" (click)="sending.set(0)">Text all codes</button>
+        </ui-card>
+      } @else if (owner() && withCodes().length > 1 && !readOnly()) {
+        <button ui-button variant="outline" type="button" (click)="sending.set(0)">
+          Text everyone their link
+        </button>
       }
 
-      <section class="card" aria-label="Players">
-        @for (p of players(); track p.id) {
-          <div class="row player">
-            <span class="who">
-              <strong>
-                {{ p.name }}
-                @if (trip()?.owner_player_id === p.id) {
-                  <span class="label"> · Owner</span>
-                }
-                @if (p.role === 'co_admin') {
-                  <span class="label"> · Co-admin</span>
-                }
-              </strong>
-              <span class="mono">{{ p.code ?? '–' }}</span>
-              <span class="label">
-                @if (p.handicap_index !== null) {
-                  Index {{ p.handicap_index }}
-                }
-                @if (!p.index_entered_at) {
-                  <span class="warn"
-                    >{{ p.handicap_index !== null ? ' · ' : '' }}Index not confirmed</span
-                  >
-                }
-              </span>
-            </span>
-            <span class="actions">
+      @if (players(); as list) {
+        <ui-card aria-label="Players">
+          @for (p of list; track p.id) {
+            <ui-list-row [title]="p.name" [detail]="detail(p)">
+              @if (trip()?.owner_player_id === p.id) {
+                <ui-chip after-title>Owner</ui-chip>
+              }
+              @if (p.role === 'co_admin') {
+                <ui-chip after-title>Co-admin</ui-chip>
+              }
+              @if (!p.index_entered_at) {
+                <span below class="warn-text">Index not confirmed</span>
+              }
               @if (p.code) {
-                <button type="button" class="button small" (click)="text(p)">
-                  {{ copied() === p.id ? 'Copied' : 'Text code' }}
+                <button ui-button size="small" type="button" (click)="text(p)">
+                  {{ copied() === p.id ? 'Copied' : 'Text link' }}
                 </button>
               }
               @if (!readOnly()) {
                 <button
+                  ui-button
+                  size="small"
+                  variant="outline"
                   type="button"
-                  class="button small quiet"
-                  [attr.aria-expanded]="open() === p.id"
                   [attr.aria-label]="'More for ' + p.name"
                   (click)="toggle(p)"
                 >
-                  ⋯
+                  <ui-icon name="more" />
                 </button>
               }
-            </span>
-          </div>
-
-          @if (open() === p.id) {
-            <div class="row stack">
-              @switch (mode()) {
-                @case ('menu') {
-                  <div class="actions">
-                    <button type="button" class="button small quiet" (click)="startEdit(p)">
-                      Edit
-                    </button>
-                    <button type="button" class="button small quiet" (click)="startReplace()">
-                      Replace player
-                    </button>
-                    <button
-                      type="button"
-                      class="button small quiet"
-                      [disabled]="busy()"
-                      (click)="regenerate(p)"
-                    >
-                      New code
-                    </button>
-                    <button
-                      type="button"
-                      class="button small quiet"
-                      [disabled]="busy()"
-                      (click)="toggleCoAdmin(p)"
-                    >
-                      {{ p.role === 'co_admin' ? 'Remove co-admin' : 'Make co-admin' }}
-                    </button>
-                    @if (trip()?.owner_player_id !== p.id) {
-                      <button
-                        type="button"
-                        class="button small quiet"
-                        [disabled]="busy()"
-                        (click)="thisIsMe(p)"
-                      >
-                        This is me
-                      </button>
-                    }
-                  </div>
-                }
-                @case ('edit') {
-                  <form class="form" (submit)="saveEdit($event, p)" novalidate>
-                    <ng-container *ngTemplateOutlet="fields; context: { full: true }" />
-                    <div class="actions">
-                      <button class="button small" type="submit" [disabled]="busy()">Save</button>
-                      <button type="button" class="button small quiet" (click)="mode.set('menu')">
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                }
-                @case ('replace') {
-                  <form class="form" (submit)="saveReplace($event, p)" novalidate>
-                    <p>
-                      {{ p.name }}'s code stops working. The new player gets a new code and keeps
-                      this spot in the groups.
-                    </p>
-                    <ng-container *ngTemplateOutlet="fields; context: { full: false }" />
-                    <div class="actions">
-                      <button class="button small" type="submit" [disabled]="busy()">
-                        Replace
-                      </button>
-                      <button type="button" class="button small quiet" (click)="mode.set('menu')">
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                }
-              }
-            </div>
+            </ui-list-row>
           }
-        }
-
-        @if (!readOnly()) {
-          @if (adding()) {
-            <div class="row stack">
-              <form class="form" (submit)="saveNew($event)" novalidate>
-                <ng-container *ngTemplateOutlet="fields; context: { full: true }" />
-                <div class="actions">
-                  <button class="button small" type="submit" [disabled]="busy()">Add player</button>
-                  <button type="button" class="button small quiet" (click)="adding.set(false)">
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          } @else {
-            <button type="button" class="row" (click)="startAdd()">
-              <span>+ Add player</span>
-            </button>
+          @if (owner() && !readOnly()) {
+            <button
+              ui-list-row
+              type="button"
+              icon="plus"
+              title="Add player"
+              (click)="startAdd()"
+            ></button>
           }
-        }
-      </section>
+        </ui-card>
+      } @else if (!error()) {
+        <ui-skeleton shape="block" height="230px" />
+      }
 
-      <section class="card" aria-label="Spectator code">
-        <div class="row"><span class="label">Spectator code</span></div>
-        @if (spectator(); as s) {
-          <div class="row player">
-            <span class="who">
-              <span class="mono" [class.off]="!s.enabled">{{ s.code }}</span>
-            </span>
-            <span class="actions">
+      @if (owner() && players()) {
+        <ui-card aria-label="Spectators">
+          <ui-section-head title="Spectators" />
+          @if (spectator(); as s) {
+            <ui-list-row [title]="shown(s.code)">
               @if (s.enabled) {
-                <button type="button" class="button small" (click)="shareSpectator(s)">
-                  {{ copied() === s.id ? 'Copied' : 'Share' }}
+                <button ui-button size="small" type="button" (click)="shareSpectator(s)">
+                  {{ copied() === s.id ? 'Copied' : 'Share link' }}
                 </button>
               }
               @if (!readOnly()) {
-                <label class="switch">
-                  <input
-                    type="checkbox"
-                    [checked]="s.enabled"
-                    [disabled]="busy()"
-                    (change)="setSpectator(s, $event)"
-                  />
-                  <span class="label">{{ s.enabled ? 'On' : 'Off' }}</span>
-                </label>
+                <ui-switch
+                  label="Spectator link"
+                  [checked]="s.enabled"
+                  [disabled]="busy()"
+                  (checkedChange)="setSpectator(s, $event)"
+                />
               }
-            </span>
-          </div>
-        } @else if (!readOnly()) {
-          <button type="button" class="row" [disabled]="busy()" (click)="createSpectator()">
-            <span>+ Create spectator code</span>
-          </button>
-        }
-      </section>
+            </ui-list-row>
+          } @else if (!readOnly()) {
+            <button
+              ui-list-row
+              type="button"
+              icon="plus"
+              title="Create spectator link"
+              [disabled]="busy()"
+              (click)="createSpectator()"
+            ></button>
+          }
+        </ui-card>
+      }
+    </main>
 
-      <ng-template #fields let-full="full">
+    <ui-sheet [open]="!!menuFor()" (openChange)="closeSheet()" [label]="menuFor()?.name">
+      @if (menuFor(); as p) {
+        @switch (mode()) {
+          @case ('menu') {
+            <h2>{{ p.name }}</h2>
+            <button ui-button variant="outline" type="button" (click)="startEdit(p)">Edit</button>
+            @if (owner()) {
+              <button ui-button variant="outline" type="button" (click)="startReplace()">
+                Replace player
+              </button>
+              <button
+                ui-button
+                variant="outline"
+                type="button"
+                [disabled]="busy()"
+                (click)="regenerate(p)"
+              >
+                New code
+              </button>
+              <button
+                ui-button
+                variant="outline"
+                type="button"
+                [disabled]="busy()"
+                (click)="toggleCoAdmin(p)"
+              >
+                {{ p.role === 'co_admin' ? 'Remove co-admin' : 'Make co-admin' }}
+              </button>
+              @if (trip()?.owner_player_id !== p.id) {
+                <button
+                  ui-button
+                  variant="outline"
+                  type="button"
+                  [disabled]="busy()"
+                  (click)="thisIsMe(p)"
+                >
+                  This is me
+                </button>
+              }
+            }
+          }
+          @case ('edit') {
+            <h2>Edit {{ p.name }}</h2>
+            <form class="stack" (submit)="saveEdit($event, p)" novalidate>
+              <ng-container *ngTemplateOutlet="fields; context: { full: true }" />
+              <button ui-button type="submit" [busy]="busy()">Save</button>
+              <button ui-button variant="outline" type="button" (click)="mode.set('menu')">
+                Cancel
+              </button>
+            </form>
+          }
+          @case ('replace') {
+            <h2>Replace {{ p.name }}</h2>
+            <form class="stack" (submit)="saveReplace($event, p)" novalidate>
+              <ng-container *ngTemplateOutlet="fields; context: { full: false }" />
+              <button ui-button type="submit" [busy]="busy()">Replace</button>
+              <button ui-button variant="outline" type="button" (click)="mode.set('menu')">
+                Cancel
+              </button>
+            </form>
+          }
+        }
+      }
+    </ui-sheet>
+
+    <ui-sheet [open]="adding()" (openChange)="adding.set(false)" label="Add player">
+      <h2>Add player</h2>
+      <form class="stack" (submit)="saveNew($event)" novalidate>
+        <ng-container *ngTemplateOutlet="fields; context: { full: true }" />
+        <button ui-button type="submit" [busy]="busy()">Add player</button>
+        <button ui-button variant="outline" type="button" (click)="adding.set(false)">
+          Cancel
+        </button>
+      </form>
+    </ui-sheet>
+
+    <ng-template #fields let-full="full">
+      <div class="pair wide">
+        <ui-field label="Name">
+          <input name="name" autocomplete="off" [value]="form().name" (input)="setName($event)" />
+        </ui-field>
+        <ui-field label="Initials">
+          <input
+            name="initials"
+            autocomplete="off"
+            autocapitalize="characters"
+            maxlength="4"
+            [value]="form().initials"
+            (input)="setForm('initials', $event)"
+          />
+        </ui-field>
+      </div>
+      @if (full) {
         <div class="pair wide">
-          <label class="field">
-            <span class="label">Name</span>
-            <input
-              class="input"
-              name="name"
-              autocomplete="off"
-              [value]="form().name"
-              (input)="setName($event)"
-            />
-          </label>
-          <label class="field">
-            <span class="label">Initials</span>
-            <input
-              class="input mono"
-              name="initials"
-              autocomplete="off"
-              autocapitalize="characters"
-              maxlength="4"
-              [value]="form().initials"
-              (input)="setForm('initials', $event)"
-            />
-          </label>
-        </div>
-        @if (full) {
-          <div class="pair wide">
-            <label class="field">
-              <span class="label">Mobile</span>
+          @if (owner()) {
+            <ui-field label="Mobile">
               <input
-                class="input"
                 name="phone"
                 type="tel"
                 inputmode="tel"
@@ -260,91 +257,39 @@ const EMPTY: Form = { name: '', initials: '', phone: '', index: '' };
                 [value]="form().phone"
                 (input)="setForm('phone', $event)"
               />
-            </label>
-            <label class="field">
-              <span class="label">Index</span>
-              <input
-                class="input mono"
-                name="index"
-                inputmode="decimal"
-                autocomplete="off"
-                placeholder="18.6"
-                [value]="form().index"
-                (input)="setForm('index', $event)"
-              />
-            </label>
-          </div>
-        }
-        @if (formError(); as text) {
-          <p class="error-text" role="alert">{{ text }}</p>
-        }
-      </ng-template>
-    </main>
-  `,
-  styles: `
-    .player {
-      align-items: center;
-    }
-    .who {
-      display: flex;
-      flex-direction: column;
-      gap: 0.1rem;
-      min-width: 0;
-    }
-    .who strong {
-      font-family: var(--font-heading);
-      font-size: 1.1rem;
-    }
-    .who .mono {
-      font-weight: 500;
-      letter-spacing: 0.03em;
-    }
-    .who .off {
-      text-decoration: line-through;
-      color: var(--muted);
-    }
-    .warn {
-      color: var(--amber);
-    }
-    .actions {
-      flex-wrap: nowrap;
-      align-items: center;
-    }
-    .stack .actions {
-      flex-wrap: wrap;
-    }
-    .form {
-      display: flex;
-      flex-direction: column;
-      gap: 0.7rem;
-    }
-    .pair.wide {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 0.6rem;
-    }
-    .switch {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      min-height: 2.75rem;
-    }
-    .switch input {
-      width: 1.5rem;
-      height: 1.5rem;
-      accent-color: var(--pine);
-    }
+            </ui-field>
+          }
+          <ui-field label="Index">
+            <input
+              name="index"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="18.6"
+              [value]="form().index"
+              (input)="setForm('index', $event)"
+            />
+          </ui-field>
+        </div>
+      }
+      @if (formError(); as text) {
+        <p class="error-text" role="alert">{{ text }}</p>
+      }
+    </ng-template>
   `,
 })
 export class Roster {
   readonly id = input.required<string>();
-  /** ?send=all opens "Text all codes" (where Admin home sends you after setting the trip live). */
+  /** ?send=all opens "Text everyone their link" (where Overview sends you after publishing). */
   readonly send = input<string>();
 
   private readonly data = inject(AdminData);
+  private readonly auth = inject(AdminAuth);
+
+  /** Codes, links, phone numbers, adding and replacing players are the owner's; a co-admin edits. */
+  protected readonly owner = this.auth.isOrganizer;
 
   protected readonly trip = signal<Trip | null>(null);
-  protected readonly players = signal<RosterPlayer[]>([]);
+  protected readonly players = signal<RosterPlayer[] | null>(null);
   protected readonly spectator = signal<SpectatorCode | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(false);
@@ -360,7 +305,10 @@ export class Roster {
 
   // "Text all codes": the index of the player being texted.
   protected readonly sending = signal<number | null>(null);
-  protected readonly withCodes = computed(() => this.players().filter((p) => p.code));
+  protected readonly withCodes = computed(() => (this.players() ?? []).filter((p) => p.code));
+  protected readonly menuFor = computed(
+    () => (this.players() ?? []).find((p) => p.id === this.open()) ?? null,
+  );
   protected readonly sendingTo = computed(() => {
     const i = this.sending();
     return i === null ? null : (this.withCodes()[i] ?? null);
@@ -375,7 +323,7 @@ export class Roster {
 
   protected async text(player: RosterPlayer): Promise<void> {
     if (!player.code) return;
-    const message = codeMessage(this.trip()?.name ?? 'the trip', player.code);
+    const message = linkMessage(this.trip()?.name ?? 'the trip', player.code);
     if (player.phone) {
       location.href = smsLink(player.phone, message);
     } else {
@@ -408,6 +356,23 @@ export class Roster {
   }
 
   // ── Menu and forms ─────────────────────────────────────────────────────────
+
+  /** "K4M9QT · Index 18.6": the code (owner only) and the handicap index. */
+  protected detail(player: RosterPlayer): string {
+    return [
+      player.code && displayCode(player.code),
+      player.handicap_index === null ? null : `Index ${player.handicap_index}`,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  protected readonly shown = displayCode;
+
+  protected closeSheet(): void {
+    this.open.set(null);
+    this.mode.set('menu');
+  }
 
   protected toggle(player: RosterPlayer): void {
     this.open.set(this.open() === player.id ? null : player.id);
@@ -494,7 +459,7 @@ export class Roster {
     event.preventDefault();
     const fields = this.read(true);
     if (!fields) return;
-    const order = Math.max(0, ...this.players().map((p) => p.sort_order)) + 1;
+    const order = Math.max(0, ...(this.players() ?? []).map((p) => p.sort_order)) + 1;
     if (await this.run(() => this.data.addPlayer(this.id(), fields, order))) this.adding.set(false);
   }
 
@@ -526,7 +491,7 @@ export class Roster {
       this.open.set(null);
   }
 
-  /** Marks this player as the organizer's own, so their trip home says Owner. It grants nothing. */
+  /** Marks this player as the organizer's own: on their sign-in, they are this player. */
   protected async thisIsMe(player: RosterPlayer): Promise<void> {
     const done = await this.run(async () =>
       this.trip.set(await this.data.updateTrip(this.id(), { owner_player_id: player.id })),
@@ -538,10 +503,8 @@ export class Roster {
     await this.run(() => this.data.issueSpectatorCode(this.id()));
   }
 
-  protected async setSpectator(code: SpectatorCode, event: Event): Promise<void> {
-    await this.run(() =>
-      this.data.setSpectatorEnabled(code.id, (event.target as HTMLInputElement).checked),
-    );
+  protected async setSpectator(code: SpectatorCode, enabled: boolean): Promise<void> {
+    await this.run(() => this.data.setSpectatorEnabled(code.id, enabled));
   }
 
   /** Runs a change, then reloads the roster. Returns whether it worked. */
@@ -578,7 +541,7 @@ export class Roster {
   private async reload(id: string): Promise<void> {
     const [players, spectator] = await Promise.all([
       this.data.roster(id),
-      this.data.spectatorCode(id),
+      this.owner() ? this.data.spectatorCode(id) : null,
     ]);
     this.players.set(players);
     this.spectator.set(spectator);

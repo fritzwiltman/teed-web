@@ -1,136 +1,146 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+  viewChildren,
+} from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { looksLikeCode, tidyCode } from '../core/code';
+import { CODE_LENGTH, codeChar, codeFromClipboard } from '../core/code';
 import { formatCountdown } from '../core/format';
 import { RedeemOutcome, SessionService } from '../core/session';
-import { InstallCard } from './install-card';
+import { UiButton, UiIcon } from '../core/ui';
 
-/** Login: one field for the player or spectator code. */
+type Problem =
+  | Exclude<RedeemOutcome, { status: 'ok' }>
+  | { status: 'nothing_to_paste' }
+  | { status: 'no_clipboard' };
+
+/** What to say for each way logging in can fail. Shared with the join link screen. */
+export function redeemMessage(outcome: Exclude<RedeemOutcome, { status: 'ok' }>): string {
+  switch (outcome.status) {
+    case 'invalid_code':
+      return "That code didn't work. Check it against the one you were sent.";
+    case 'trip_not_live':
+      return outcome.tripStatus === 'final'
+        ? 'That trip has finished, so its codes no longer log in.'
+        : "That trip isn't open yet. Your organizer will tell you when it is.";
+    case 'rate_limited':
+      return 'Too many tries. Wait a few minutes and try again.';
+    case 'offline':
+      return "Can't reach Teed. Check your signal and try again.";
+    default:
+      return 'Something went wrong on our side. Try again in a moment.';
+  }
+}
+
+/**
+ * Signed out: "Welcome back". One big button pastes the code the player copied on the way in;
+ * six boxes below take it by hand. Players normally never see this in Safari: their texted link
+ * logs them straight in.
+ */
 @Component({
   selector: 'app-login',
-  imports: [InstallCard, RouterLink],
+  imports: [RouterLink, UiButton, UiIcon],
   template: `
-    <main class="page">
-      <header>
-        <h1 class="wordmark">Teed</h1>
-        <p class="label">Live scoring for golf trips</p>
-      </header>
+    <main class="content">
+      <p class="wordmark">teed</p>
+      <h1>Welcome back</h1>
 
-      <form class="card pad" (submit)="join($event)" novalidate>
-        <label class="label" for="code">Trip code</label>
-        <input
-          id="code"
-          class="code"
-          name="code"
-          type="text"
-          inputmode="text"
-          autocapitalize="characters"
-          autocomplete="off"
-          autocorrect="off"
-          spellcheck="false"
-          enterkeyhint="go"
-          placeholder="VERO-FW27-K4M9"
-          [value]="code()"
-          (input)="typed($event)"
-          [attr.aria-invalid]="message() ? 'true' : null"
-          aria-describedby="code-note"
-        />
-        @if (message(); as text) {
-          <p id="code-note" class="error" role="alert">{{ text }}</p>
-        } @else {
-          <p id="code-note" class="muted note">
-            The code your organiser sent you. Capitals and dashes don't matter.
-          </p>
+      <button ui-button type="button" [busy]="busy()" [disabled]="locked()" (click)="paste()">
+        @if (!busy()) {
+          <ui-icon name="paste" />
         }
-        <button class="button" type="submit" [disabled]="busy() || locked() || !code()">
-          {{ busy() ? 'Joining…' : 'Join trip' }}
-        </button>
-      </form>
+        {{ busy() ? 'Logging in…' : 'Paste my code' }}
+      </button>
 
-      <app-install-card />
+      <div class="boxes" role="group" aria-label="Your code">
+        @for (char of chars(); track $index) {
+          <input
+            #box
+            class="box"
+            type="text"
+            inputmode="text"
+            autocapitalize="characters"
+            autocomplete="off"
+            autocorrect="off"
+            spellcheck="false"
+            maxlength="2"
+            [attr.aria-label]="'Character ' + ($index + 1) + ' of ' + chars().length"
+            [attr.aria-invalid]="message() ? 'true' : null"
+            [value]="char"
+            [disabled]="busy() || locked()"
+            (input)="typed($index, $event)"
+            (keydown)="key($index, $event)"
+            (paste)="pasted($event)"
+          />
+        }
+      </div>
 
-      <a class="organizer" routerLink="/admin">Organizer sign-in</a>
+      @if (message(); as text) {
+        <p class="error-text center" role="alert">{{ text }}</p>
+      }
+
+      <a ui-button variant="text" class="center organizer" routerLink="/admin">Organizer sign-in</a>
     </main>
   `,
   styles: `
-    .page {
+    .content {
       min-height: 100dvh;
-      padding-top: calc(3rem + env(safe-area-inset-top));
-      padding-bottom: calc(2rem + env(safe-area-inset-bottom));
-      gap: 1.25rem;
-    }
-    header {
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
-      margin-bottom: 0.5rem;
+      padding-top: calc(48px + env(safe-area-inset-top));
+      padding-bottom: calc(var(--s6) + env(safe-area-inset-bottom));
+      gap: var(--s5);
     }
     .wordmark {
-      font-size: 3.5rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      color: var(--brand);
+      text-align: center;
+      font: 700 56px/1 var(--font-heading);
+      color: var(--accent);
     }
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: 0.6rem;
+    h1 {
+      text-align: center;
+      font-size: 32px;
     }
-    .code {
+    .boxes {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: var(--s2);
+    }
+    .box {
       width: 100%;
-      min-height: 3.5rem;
-      padding: 0 0.75rem;
-      border: 2px solid var(--frame);
-      border-radius: var(--radius);
-      background: var(--field);
+      height: 56px;
+      padding: 0;
+      border: 1.5px solid var(--line-strong);
+      border-radius: var(--radius-button);
+      background: var(--card);
       color: var(--ink);
-      font: 600 1.3rem var(--font-mono);
-      letter-spacing: 0.04em;
+      font: 700 26px var(--font-heading);
       text-align: center;
       text-transform: uppercase;
     }
-    .code::placeholder {
-      color: var(--muted);
-      opacity: 0.55;
-      font-weight: 400;
+    .box:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent);
     }
-    .code[aria-invalid='true'] {
+    .box[aria-invalid='true'] {
       border-color: var(--red);
     }
-    .note {
-      font-size: 0.875rem;
-    }
-    .error {
-      color: var(--red);
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
     .organizer {
-      align-self: center;
-      display: inline-flex;
-      align-items: center;
-      min-height: var(--tap);
+      margin-top: auto;
       color: var(--muted);
-      font-size: 0.9rem;
-      text-underline-offset: 3px;
-    }
-    .button {
-      margin-top: 0.4rem;
-      min-height: 3.5rem;
-      font-size: 1.15rem;
     }
   `,
 })
 export class Login {
   private readonly session = inject(SessionService);
   private readonly router = inject(Router);
+  private readonly boxes = viewChildren<ElementRef<HTMLInputElement>>('box');
 
-  protected readonly code = signal('');
+  protected readonly chars = signal<string[]>(Array<string>(CODE_LENGTH).fill(''));
   protected readonly busy = signal(false);
-  private readonly outcome = signal<
-    Exclude<RedeemOutcome, { status: 'ok' }> | { status: 'too_short' } | null
-  >(null);
+  private readonly problem = signal<Problem | null>(null);
 
   // Lockout countdown after too many tries.
   private readonly lockedUntil = signal(0);
@@ -142,25 +152,12 @@ export class Login {
       const left = formatCountdown((this.lockedUntil() - this.now()) / 1000);
       return `Too many tries. You can try again in ${left}.`;
     }
-    const outcome = this.outcome();
-    switch (outcome?.status) {
-      case 'too_short':
-        return 'That looks too short. A code looks like VERO-FW27-K4M9.';
-      case 'invalid_code':
-        return "That code didn't work. Check it against the one you were sent and try again.";
-      case 'trip_not_live':
-        return outcome.tripStatus === 'final'
-          ? 'That trip has finished, so its codes no longer log in.'
-          : "That trip isn't open yet. Your organiser will tell you when it's live.";
-      case 'rate_limited':
-        return 'Too many tries. Wait a few minutes and try again.';
-      case 'offline':
-        return "Can't reach Teed. Check your signal and try again.";
-      case 'error':
-        return 'Something went wrong on our side. Try again in a moment.';
-      default:
-        return null;
-    }
+    const problem = this.problem();
+    if (!problem) return null;
+    if (problem.status === 'nothing_to_paste')
+      return 'There is no code to paste. Copy it from your text, or type it below.';
+    if (problem.status === 'no_clipboard') return 'Type your code below.';
+    return redeemMessage(problem);
   });
 
   constructor() {
@@ -170,24 +167,60 @@ export class Login {
     inject(DestroyRef).onDestroy(() => clearInterval(timer));
   }
 
-  protected typed(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const tidy = tidyCode(input.value);
-    if (input.value !== tidy) input.value = tidy;
-    this.code.set(tidy);
-    if (!this.locked()) this.outcome.set(null);
-  }
-
-  protected async join(event: Event): Promise<void> {
-    event.preventDefault();
+  /** Reads the clipboard (allowed because this runs from a tap) and logs in with what it finds. */
+  protected async paste(): Promise<void> {
     if (this.busy() || this.locked()) return;
-    if (!looksLikeCode(this.code())) {
-      this.outcome.set({ status: 'too_short' });
+    let text: string;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      // No clipboard access (refused, or not offered by this browser): the boxes still work.
+      this.problem.set({ status: 'no_clipboard' });
+      this.boxes()[0]?.nativeElement.focus();
       return;
     }
+    const code = codeFromClipboard(text);
+    if (!code) {
+      this.problem.set({ status: 'nothing_to_paste' });
+      return;
+    }
+    await this.redeem(code);
+  }
 
+  /** One character typed in a box: keep it, move on, and log in once all six are there. */
+  protected typed(index: number, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const char = codeChar(input.value);
+    input.value = char;
+    this.chars.update((chars) => chars.map((c, i) => (i === index ? char : c)));
+    if (!this.locked()) this.problem.set(null);
+    if (!char) return;
+    if (index < CODE_LENGTH - 1) this.boxes()[index + 1]?.nativeElement.focus();
+    if (this.chars().every(Boolean)) void this.redeem(this.chars().join(''));
+  }
+
+  /** Backspace in an empty box goes back one. */
+  protected key(index: number, event: KeyboardEvent): void {
+    if (event.key === 'Backspace' && !this.chars()[index] && index > 0) {
+      event.preventDefault();
+      this.chars.update((chars) => chars.map((c, i) => (i === index - 1 ? '' : c)));
+      this.boxes()[index - 1]?.nativeElement.focus();
+    }
+  }
+
+  /** Pasting into a box takes the whole code, old style or new. */
+  protected pasted(event: ClipboardEvent): void {
+    const code = codeFromClipboard(event.clipboardData?.getData('text') ?? '');
+    if (!code) return;
+    event.preventDefault();
+    void this.redeem(code);
+  }
+
+  private async redeem(code: string): Promise<void> {
+    if (this.busy() || this.locked()) return;
     this.busy.set(true);
-    const outcome = await this.session.redeem(this.code());
+    this.problem.set(null);
+    const outcome = await this.session.redeem(code);
     this.busy.set(false);
 
     if (outcome.status === 'ok') {
@@ -198,6 +231,9 @@ export class Login {
       this.now.set(Date.now());
       this.lockedUntil.set(Date.now() + outcome.retryAfter * 1000);
     }
-    this.outcome.set(outcome);
+    this.problem.set(outcome);
+    this.chars.set(Array<string>(CODE_LENGTH).fill(''));
+    // Empty the boxes themselves too: a box typed into moments ago may not have been drawn yet.
+    for (const box of this.boxes()) box.nativeElement.value = '';
   }
 }

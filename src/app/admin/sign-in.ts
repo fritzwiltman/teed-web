@@ -1,92 +1,83 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
+import { UiButton, UiCard, UiField, UiHeaderBand } from '../core/ui';
 import { AdminAuth } from './auth';
 
 /** Organizer sign-in: email and password, with an emailed link as the other way in. */
 @Component({
   selector: 'app-sign-in',
-  imports: [RouterLink],
+  imports: [UiButton, UiCard, UiField, UiHeaderBand],
   template: `
-    <main class="page">
-      <a class="back" routerLink="/login">‹ Player login</a>
-      <h1>Organizer sign-in</h1>
-
-      @if (auth.email() && !auth.isOrganizer()) {
-        <section class="card pad stack">
-          <p>
-            <strong>{{ auth.email() }}</strong> isn't an organizer account.
-          </p>
-          <button type="button" class="button quiet" (click)="auth.signOut()">Sign out</button>
-        </section>
-      } @else if (linkSentTo(); as address) {
-        <section class="card pad stack">
-          <p>
-            Check <strong>{{ address }}</strong> and tap the link in the email.
-          </p>
-          <button type="button" class="link-button" (click)="linkSentTo.set(null)">
-            Back to sign-in
-          </button>
-        </section>
-      } @else {
-        <form class="card pad stack" (submit)="signIn($event)" novalidate>
-          <label class="field">
-            <span class="label">Email</span>
-            <input
-              class="input"
-              id="email"
-              name="email"
-              type="email"
-              inputmode="email"
-              autocomplete="username"
-              autocapitalize="none"
-              spellcheck="false"
-              [value]="email()"
-              (input)="set(email, $event, true)"
-            />
-          </label>
-          <label class="field">
-            <span class="label">Password</span>
-            <input
-              class="input"
-              id="password"
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              [value]="password()"
-              (input)="set(password, $event)"
-            />
-          </label>
-          @if (message(); as text) {
-            <p class="error-text" role="alert">{{ text }}</p>
-          }
-          <button
-            class="button"
-            type="submit"
-            [disabled]="!!busy() || !validEmail() || !password()"
-          >
-            {{ busy() === 'password' ? 'Signing in…' : 'Sign in' }}
-          </button>
-          <button
-            type="button"
-            class="link-button"
-            [disabled]="!!busy() || !validEmail()"
-            (click)="sendLink()"
-          >
-            {{ busy() === 'link' ? 'Sending…' : 'Email me a link instead' }}
-          </button>
-        </form>
-      }
-    </main>
-  `,
-  styles: `
-    .stack {
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-    }
-    .link-button:disabled {
-      opacity: 0.5;
-    }
+    <div class="screen">
+      <ui-header-band title="Organizer sign-in" back="/login" backLabel="Player login" />
+      <main class="content">
+        @if (auth.email() && !auth.isOrganizer()) {
+          <ui-card pad>
+            <p>{{ auth.email() }} isn't an organizer account.</p>
+            <button ui-button variant="outline" type="button" (click)="auth.signOut()">
+              Sign out
+            </button>
+          </ui-card>
+        } @else if (linkSentTo(); as address) {
+          <ui-card pad>
+            <p>Check {{ address }} and tap the link in the email.</p>
+            <button ui-button variant="text" type="button" (click)="linkSentTo.set(null)">
+              Back to sign-in
+            </button>
+          </ui-card>
+        } @else {
+          <ui-card pad>
+            <form class="stack" (submit)="signIn($event)" novalidate>
+              <ui-field label="Email">
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  inputmode="email"
+                  autocomplete="username"
+                  autocapitalize="none"
+                  spellcheck="false"
+                  [value]="email()"
+                  (input)="set(email, $event, true)"
+                />
+              </ui-field>
+              <ui-field label="Password">
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  [value]="password()"
+                  (input)="set(password, $event)"
+                />
+              </ui-field>
+              @if (message(); as text) {
+                <p class="error-text" role="alert">{{ text }}</p>
+              }
+              <button
+                ui-button
+                type="submit"
+                [busy]="busy() === 'password'"
+                [disabled]="!!busy() || !validEmail() || !password()"
+              >
+                {{ busy() === 'password' ? 'Signing in…' : 'Sign in' }}
+              </button>
+              <button
+                ui-button
+                variant="text"
+                type="button"
+                class="center"
+                [busy]="busy() === 'link'"
+                [disabled]="!!busy() || !validEmail()"
+                (click)="sendLink()"
+              >
+                {{ busy() === 'link' ? 'Sending…' : 'Email me a link instead' }}
+              </button>
+            </form>
+          </ui-card>
+        }
+      </main>
+    </div>
   `,
 })
 export class SignIn {

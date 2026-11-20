@@ -1,6 +1,15 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-import { AdminData, AdminError, TripFields, TripStatus } from './data';
+import { Component, effect, inject, input, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import {
+  UiButton,
+  UiCard,
+  UiField,
+  UiHeaderBand,
+  UiListRow,
+  UiSectionHead,
+  UiSwitch,
+} from '../core/ui';
+import { AdminData, AdminError, Trip, TripFields, TripStatus } from './data';
 
 /** 'YYYY-MM-DD' plus a number of days. */
 export function addDays(date: string, days: number): string {
@@ -15,7 +24,7 @@ const BLANK: TripFields = {
   location: null,
   start_date: '',
   end_date: '',
-  theme: 'scorecard',
+  theme: 'tour',
   handicap_allowance: 0.9,
   strokes_off_low: true,
   pickup_net_double: true,
@@ -23,75 +32,61 @@ const BLANK: TripFields = {
   handicap_lock_date: null,
 };
 
+/**
+ * A trip's short internal handle, made from its name: 'Vero Beach 2027' → 'VEROBEACH202'.
+ * Nobody sees it; it only has to be unique, so a clash gets two random characters on the end.
+ */
+export function slugFor(name: string, clash = false): string {
+  const base = name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!clash) return (base || 'TRIP').slice(0, 12).padEnd(2, 'X');
+  const tail = Array.from(
+    { length: 2 },
+    () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)],
+  ).join('');
+  return (base || 'TRIP').slice(0, 10) + tail;
+}
+
 /** Trip details: the New trip form, and the same form for an existing trip. */
 @Component({
   selector: 'app-trip-details',
-  imports: [RouterLink],
+  imports: [UiButton, UiCard, UiField, UiHeaderBand, UiListRow, UiSectionHead, UiSwitch],
   template: `
-    <main class="page">
-      <a class="back" [routerLink]="id() ? ['/admin/trips', id()] : ['/admin']"
-        >‹ {{ id() ? 'Trip' : 'My trips' }}</a
-      >
-      <h1>{{ id() ? 'Trip details' : 'New trip' }}</h1>
-
-      <form (submit)="save($event)" novalidate>
-        <fieldset [disabled]="readOnly() || busy()">
-          <section class="card pad fields">
-            <label class="field">
-              <span class="label">Name</span>
+    <ui-header-band
+      [title]="id() ? 'Trip details' : 'New trip'"
+      [back]="id() ? ['/admin/trips', id()] : ['/admin']"
+      [backLabel]="id() ? 'Overview' : 'My trips'"
+    />
+    <main class="content">
+      <form class="stack form" (submit)="save($event)" novalidate>
+        <fieldset class="stack form" [disabled]="readOnly() || busy()">
+          <ui-card pad>
+            <ui-field label="Name">
               <input
-                class="input"
                 name="name"
                 autocomplete="off"
                 [value]="f().name"
                 (input)="set('name', text($event))"
               />
-            </label>
-            <label class="field">
-              <span class="label">Code prefix</span>
+            </ui-field>
+            <ui-field label="Location">
               <input
-                class="input mono"
-                name="slug"
-                autocomplete="off"
-                autocapitalize="characters"
-                spellcheck="false"
-                placeholder="VERO"
-                [value]="f().slug"
-                (input)="setSlug($event)"
-                aria-describedby="slug-hint"
-              />
-              <span id="slug-hint" class="label hint">{{ exampleCode() }}</span>
-              @if (slugEndsWithDigits()) {
-                <span class="warn" role="status"
-                  >The year is added for you, so leave it off the prefix.</span
-                >
-              }
-            </label>
-            <label class="field">
-              <span class="label">Location</span>
-              <input
-                class="input"
                 name="location"
                 autocomplete="off"
                 [value]="f().location ?? ''"
                 (input)="set('location', text($event) || null)"
               />
-            </label>
+            </ui-field>
             <div class="pair">
-              <label class="field">
-                <span class="label">First day</span>
+              <ui-field label="First day">
                 <input
-                  class="input"
                   name="start"
                   type="date"
                   [value]="f().start_date"
                   (change)="setStart($event, lastDay)"
                 />
-              </label>
-              <label class="field">
-                <span class="label">Last day</span>
+              </ui-field>
+              <ui-field label="Last day">
                 <input
-                  class="input"
                   name="end"
                   type="date"
                   #lastDay
@@ -99,39 +94,15 @@ const BLANK: TripFields = {
                   [min]="f().start_date"
                   (change)="setEnd($event)"
                 />
-              </label>
+              </ui-field>
             </div>
-          </section>
+          </ui-card>
 
-          <section class="card" aria-label="Theme">
-            <div class="row"><span class="label">Theme</span></div>
-            @for (theme of themes; track theme.key) {
-              <label class="row" [class.off]="!theme.ready">
-                <span>
-                  {{ theme.name }}
-                  @if (!theme.ready) {
-                    <span class="label"> · coming later</span>
-                  }
-                </span>
+          <ui-card pad aria-label="Handicaps">
+            <ui-section-head title="Handicaps" />
+            <div class="pair">
+              <ui-field label="Allowance %">
                 <input
-                  type="radio"
-                  name="theme"
-                  [value]="theme.key"
-                  [checked]="f().theme === theme.key"
-                  [disabled]="!theme.ready"
-                  (change)="set('theme', theme.key)"
-                />
-              </label>
-            }
-          </section>
-
-          <section class="card" aria-label="House rules">
-            <div class="row"><span class="label">House rules</span></div>
-            <label class="row">
-              <span>Handicap allowance</span>
-              <span class="percent">
-                <input
-                  class="input mono"
                   name="allowance"
                   type="number"
                   inputmode="numeric"
@@ -140,116 +111,65 @@ const BLANK: TripFields = {
                   [value]="percent()"
                   (input)="setPercent($event)"
                 />
-                %
-              </span>
-            </label>
-            <label class="row">
-              <span>Strokes off the low man</span>
-              <input
-                type="checkbox"
-                name="low"
+              </ui-field>
+              <ui-field label="Lock date">
+                <input
+                  name="lock"
+                  type="date"
+                  [value]="f().handicap_lock_date ?? ''"
+                  [max]="f().start_date"
+                  (input)="set('handicap_lock_date', text($event) || null)"
+                />
+              </ui-field>
+            </div>
+          </ui-card>
+
+          <ui-card aria-label="House rules">
+            <ui-section-head title="House rules" />
+            <label ui-list-row title="Strokes off the low man">
+              <ui-switch
                 [checked]="f().strokes_off_low"
-                (change)="set('strokes_off_low', checked($event))"
+                [disabled]="readOnly() || busy()"
+                (checkedChange)="set('strokes_off_low', $event)"
               />
             </label>
-            <label class="row">
-              <span>Pick up at net double bogey</span>
-              <input
-                type="checkbox"
-                name="pickup"
+            <label ui-list-row title="Pick up at net double bogey">
+              <ui-switch
                 [checked]="f().pickup_net_double"
-                (change)="set('pickup_net_double', checked($event))"
+                [disabled]="readOnly() || busy()"
+                (checkedChange)="set('pickup_net_double', $event)"
               />
             </label>
-            <label class="row">
-              <span>Spectators see money</span>
-              <input
-                type="checkbox"
-                name="money"
+            <label ui-list-row title="Spectators see money">
+              <ui-switch
                 [checked]="f().spectators_see_money"
-                (change)="set('spectators_see_money', checked($event))"
+                [disabled]="readOnly() || busy()"
+                (checkedChange)="set('spectators_see_money', $event)"
               />
             </label>
-            <label class="row">
-              <span>Handicap lock date</span>
-              <input
-                class="input date"
-                name="lock"
-                type="date"
-                [value]="f().handicap_lock_date ?? ''"
-                [max]="f().start_date"
-                (input)="set('handicap_lock_date', text($event) || null)"
-              />
-            </label>
-          </section>
+          </ui-card>
         </fieldset>
 
         @if (error(); as text) {
           <p class="error-text" role="alert">{{ text }}</p>
         }
         @if (!readOnly()) {
-          <button class="button" type="submit" [disabled]="busy()">
-            {{ id() ? 'Save' : 'Create trip' }}
+          <button ui-button type="submit" [busy]="busy()">
+            {{ busy() ? 'Saving…' : id() ? 'Save' : 'Create trip' }}
           </button>
         }
       </form>
     </main>
   `,
   styles: `
-    form,
-    fieldset {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
+    .form {
+      gap: var(--gap-cards);
     }
     fieldset {
       border: 0;
       margin: 0;
       padding: 0;
       min-width: 0;
-    }
-    .fields {
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-    }
-    .pair {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 0.6rem;
-    }
-    .hint {
-      text-transform: none;
-      letter-spacing: 0.03em;
-    }
-    .warn {
-      color: var(--amber);
-      font-size: 0.875rem;
-      font-weight: 500;
-    }
-    .row {
-      align-items: center;
-    }
-    .row.off {
-      color: var(--muted);
-    }
-    input[type='checkbox'] {
-      width: 1.5rem;
-      height: 1.5rem;
-      accent-color: var(--pine);
-    }
-    .percent {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-    .percent .input {
-      width: 5rem;
-      text-align: right;
-    }
-    .date {
-      width: 10.5rem;
-      flex: none;
     }
   `,
 })
@@ -267,11 +187,6 @@ export class TripDetails {
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
 
-  protected readonly themes = [
-    { key: 'scorecard', name: 'Scorecard', ready: true },
-    { key: 'coastal', name: 'Coastal', ready: false },
-  ];
-
   constructor() {
     effect(() => {
       const id = this.id();
@@ -283,30 +198,10 @@ export class TripDetails {
     return (event.target as HTMLInputElement).value;
   }
 
-  protected checked(event: Event): boolean {
-    return (event.target as HTMLInputElement).checked;
-  }
-
   protected set<K extends keyof TripFields>(key: K, value: TripFields[K]): void {
     this.f.update((f) => ({ ...f, [key]: value }));
     this.error.set(null);
   }
-
-  protected setSlug(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    input.value = input.value
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, '')
-      .slice(0, 12);
-    this.set('slug', input.value);
-  }
-
-  /** What a player's code will look like with this prefix: the year comes from the trip's first day. */
-  protected readonly exampleCode = computed(() => {
-    const year = (this.f().start_date || String(new Date().getFullYear())).slice(2, 4);
-    return `Codes look like ${this.f().slug || 'VERO'}-FW${year}-K4M9`;
-  });
-  protected readonly slugEndsWithDigits = computed(() => /\d$/.test(this.f().slug));
 
   /**
    * Choosing the first day fills in the last day (three days later) when it is empty or now
@@ -351,15 +246,13 @@ export class TripDetails {
 
     const problem = !f.name
       ? 'Give the trip a name.'
-      : f.slug.length < 2
-        ? 'The code prefix needs at least 2 letters or numbers.'
-        : !f.start_date || !f.end_date
-          ? 'Set the first and last day.'
-          : f.end_date < f.start_date
-            ? 'The last day is before the first day.'
-            : !Number.isInteger(percent) || percent < 1 || percent > 100
-              ? 'The handicap allowance is a whole number from 1 to 100.'
-              : null;
+      : !f.start_date || !f.end_date
+        ? 'Set the first and last day.'
+        : f.end_date < f.start_date
+          ? 'The last day is before the first day.'
+          : !Number.isInteger(percent) || percent < 1 || percent > 100
+            ? 'The handicap allowance is a whole number from 1 to 100.'
+            : null;
     if (problem) {
       this.error.set(problem);
       return;
@@ -369,19 +262,24 @@ export class TripDetails {
     this.busy.set(true);
     try {
       const id = this.id();
-      const trip = id ? await this.data.updateTrip(id, f) : await this.data.createTrip(f);
+      const trip = id ? await this.data.updateTrip(id, f) : await this.create(f);
       await this.router.navigate(['/admin/trips', trip.id]);
     } catch (e) {
-      this.error.set(
-        e instanceof AdminError
-          ? e.message.replace(
-              'That is already in use',
-              `The code prefix ${f.slug} is already in use`,
-            )
-          : "Couldn't save the trip.",
-      );
+      this.error.set(e instanceof AdminError ? e.message : "Couldn't save the trip.");
     } finally {
       this.busy.set(false);
+    }
+  }
+
+  /** A new trip gets its handle from its name; if another trip has that one, try a different ending. */
+  private async create(fields: TripFields): Promise<Trip> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.data.createTrip({ ...fields, slug: slugFor(fields.name, attempt > 0) });
+      } catch (e) {
+        const clash = e instanceof AdminError && e.message.startsWith('That is already in use');
+        if (!clash || attempt >= 4) throw e;
+      }
     }
   }
 

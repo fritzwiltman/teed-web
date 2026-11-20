@@ -133,14 +133,14 @@ select throws_ok(
   $$ select public.regenerate_player_code(tests.id('ben')) $$,
   '42501', null, 'nor can a co-admin');
 
--- Ben is the trip's owner_player_id, which is for display only.
+-- Ben is the trip's owner_player_id. That link only means something to the owner's own account.
 select tests.as_user('phone2');
 select is_empty('select * from public.player_codes', 'being the owner''s player gives no access to codes');
 with u as (update public.trips set name = 'Mine now' returning 1)
 select is((select count(*) from u), 0::bigint, '...and no admin rights');
 
 select tests.as_user('owner');    -- the owner, signed in by email
-select matches(public.regenerate_player_code(tests.id('ben')), '^VERO-BK27-[A-HJ-NP-Z2-9]{4}$', 'the owner gets a new code in the standard format');
+select matches(public.regenerate_player_code(tests.id('ben')), '^[A-HJ-NP-Z2-9]{3}-[A-HJ-NP-Z2-9]{3}$', 'the owner gets a new six-character code');
 select tests.as_postgres();
 
 select is_empty($$ select * from public.trip_sessions where player_id = tests.id('ben') $$, 'regenerating a code signs out the phones that used the old one');
