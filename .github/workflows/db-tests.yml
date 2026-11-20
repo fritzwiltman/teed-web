@@ -47,6 +47,15 @@ jobs:
         run: |
           start() { supabase start -x studio,realtime,storage-api,imgproxy,postgres-meta,logflare,vector,supavisor; }
           start || { supabase stop --no-backup || true; sleep 20; start; }
+      # Auth reads the email templates from the gateway once, as it starts, and the gateway is
+      # often not up yet: it then sends its stock emails. Starting Auth again picks them up.
+      - name: Reload the email templates
+        run: |
+          docker restart supabase_auth_teed
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:54321/auth/v1/health -H "apikey: $(supabase status -o env | sed -n 's/^ANON_KEY="\(.*\)"$/\1/p')" > /dev/null && break
+            sleep 1
+          done
       - name: Export local URL and keys
         run: |
           supabase status -o env > "$RUNNER_TEMP/supabase.env"
@@ -54,10 +63,3 @@ jobs:
           sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' "$RUNNER_TEMP/supabase.env" >> "$GITHUB_ENV"
       - name: Run edge function tests
         run: node --test supabase/tests/functions/accounts.test.mjs
-      - name: Auth diagnostics
-        if: failure()
-        run: |
-          docker ps --format '{{.Names}}'
-          docker inspect supabase_auth_teed --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -i -E 'MAILER|SMTP|OTP|AUTOCONFIRM' | sed -E 's/(PASS|KEY|SECRET)=.*/\1=…/' || true
-          docker logs supabase_auth_teed 2>&1 | tail -40 || true
-
