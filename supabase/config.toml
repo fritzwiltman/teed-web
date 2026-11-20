@@ -258,25 +258,25 @@ otp_expiry = 3600
 # Production uses the same text: paste each file into the dashboard (docs/setup-auth.md).
 [auth.email.template.confirmation]
 subject = "Your Teed code"
-content_path = "./templates/confirmation.html"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.magic_link]
 subject = "Your Teed code"
-content_path = "./templates/magic_link.html"
+content_path = "./supabase/templates/magic_link.html"
 
 [auth.email.template.email_change]
 subject = "Your Teed code"
-content_path = "./templates/email_change.html"
+content_path = "./supabase/templates/email_change.html"
 
 # [auth.email.template.invite]
 # subject = "You have been invited"
-# content_path = "./templates/invite.html"
+# content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
 # subject = "Your password has been changed"
-# content_path = "./templates/password_changed_notification.html"
+# content_path = "./supabase/templates/password_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow the phone provider. When false, users can't sign up or sign in with SMS.

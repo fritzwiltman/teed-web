@@ -54,3 +54,10 @@ jobs:
           sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' "$RUNNER_TEMP/supabase.env" >> "$GITHUB_ENV"
       - name: Run edge function tests
         run: node --test supabase/tests/functions/accounts.test.mjs
+      - name: Auth diagnostics
+        if: failure()
+        run: |
+          docker ps --format '{{.Names}}'
+          docker inspect supabase_auth_teed --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -i -E 'MAILER|SMTP|OTP|AUTOCONFIRM' | sed -E 's/(PASS|KEY|SECRET)=.*/\1=…/' || true
+          docker logs supabase_auth_teed 2>&1 | tail -40 || true
+
