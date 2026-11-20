@@ -40,7 +40,7 @@ create trigger profiles_set_updated_at before update on public.profiles
 insert into public.profiles (id, email, is_admin)
 select u.id, lower(u.email), exists (select 1 from public.app_admins a where a.user_id = u.id)
 from auth.users u
-where u.email is not null and not coalesce(u.is_anonymous, false);
+where u.email is not null and u.email_confirmed_at is not null and not coalesce(u.is_anonymous, false);
 
 -- ── Small helpers ───────────────────────────────────────────────────────────
 
@@ -536,6 +536,12 @@ begin
      and new.email is distinct from old.email then
     raise exception 'This person has signed in: their email is the one they sign in with' using errcode = '23514';
   end if;
+  -- An organizer who hasn't signed in yet (a seeded trip): whoever gets that email gets the trip,
+  -- so only the app admin (or SQL) may set it.
+  if tg_op = 'UPDATE' and new.role = 'organizer' and new.email is distinct from old.email
+     and auth.uid() is not null and not private.is_app_admin() then
+    raise exception 'Only the app admin can say who the organizer is' using errcode = '42501';
+  end if;
   return new;
 end;
 $$;
@@ -808,7 +814,10 @@ as $$
 declare
   v_token text := private.new_token();
 begin
-  if not private.is_trip_admin(private.player_trip_id(p_member_id)) then
+  if not private.is_trip_admin(private.player_trip_id(p_member_id))
+     -- the organizer's own seat, if nobody has taken it yet, is the app admin's to hand out
+     or (not private.is_app_admin()
+         and exists (select 1 from public.trip_members m where m.id = p_member_id and m.role = 'organizer')) then
     raise exception 'Not allowed' using errcode = '42501';
   end if;
   update public.trip_members m

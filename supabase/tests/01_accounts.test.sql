@@ -78,6 +78,11 @@ select tests.sign_up('pending', false);
 select is((select count(*) from public.profiles where id = tests.id('user:pending')), 0::bigint,
           'an email that has not been verified yet has no profile');
 
+update auth.users set email = 'Olive.New@Test.Teed' where id = tests.id('user:olive');
+select is((select email from public.profiles where id = tests.id('user:olive')), 'olive.new@test.teed',
+          'the profile email follows the sign-in email when it changes');
+update auth.users set email = 'Olive@Test.Teed' where id = tests.id('user:olive');
+
 select tests.as_user('olive');
 select is(public.me() ->> 'is_admin', 'false', 'me(): an ordinary person is not an admin');
 select is(public.me() ->> 'is_trip_creator', 'false', '… and not a trip creator');
@@ -209,6 +214,22 @@ select tests.as_postgres();
 select throws_ok(
   $$ insert into public.trip_members (trip_id, name, initials, email) values (tests.id('one'), 'Matt Two', 'MT', 'matt@test.teed') $$,
   '23505', null, 'an email is on a trip once');
+
+-- An organizer's seat nobody has taken yet (a seeded trip) is not a co-organizer's to give away.
+insert into public.trips (id, name, slug, start_date, end_date, status)
+values (tests.id('seeded'), 'Seeded', 'SEEDED', current_date + 5, current_date + 6, 'live');
+insert into public.trip_members (id, trip_id, name, initials, role, profile_id) values
+  (tests.id('s:org'), tests.id('seeded'), 'Absent', 'A', 'organizer', null),
+  (tests.id('s:cal'), tests.id('seeded'), 'Cal', 'C', 'co_organizer', tests.id('user:cal'));
+select tests.as_user('cal');
+select throws_ok($$ update public.trip_members set email = 'friend@test.teed' where id = tests.id('s:org') $$, '42501', null,
+                 'a co-organizer cannot put an email on an unclaimed organizer');
+select throws_ok($$ select public.invite_member(tests.id('s:org')) $$, '42501', null,
+                 'or make an invite link for that seat');
+select tests.as_user('fritz');
+select lives_ok($$ select public.invite_member(tests.id('s:org')) $$, 'the app admin can');
+select tests.as_postgres();
+delete from public.trips where id = tests.id('seeded');
 
 -- ── One organizer per trip ──────────────────────────────────────────────────
 
