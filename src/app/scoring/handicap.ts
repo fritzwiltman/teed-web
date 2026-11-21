@@ -27,19 +27,30 @@ export function playingHandicap(index: number, tee: Tee, allowance: number): num
 }
 
 /**
+ * When players in a group play tees with different pars, those on the higher par get the
+ * difference as extra strokes (Rules of Handicapping 6.2b): a course handicap is the strokes to
+ * play to par, so without this the lower-par tees would win every tie. Returns each player's
+ * extra strokes: their tees' par less the lowest par in the group.
+ */
+export function parAdjustments(pars: number[]): number[] {
+  const low = pars.length ? Math.min(...pars) : 0;
+  return pars.map((par) => par - low);
+}
+
+/**
  * A player's playing handicap for this round: the one recorded for it if there is one, else
- * worked out from their index; null when there is no index to work from. A nine-hole round
- * plays half of it, rounded.
+ * course handicap (from their own tees) × allowance, rounded, plus `parAdjustment`. Null when
+ * there is no index to work from. A nine-hole round plays half of it, rounded.
  */
 export function playingFor(
   player: RoundPlayer,
   tee: Tee,
   rules: HouseRules,
   holes: Holes,
+  parAdjustment = 0,
 ): number | null {
-  const full =
-    player.storedPlaying ??
-    (player.index == null ? null : playingHandicap(player.index, tee, rules.allowance));
+  const worked = player.index == null ? null : playingHandicap(player.index, tee, rules.allowance);
+  const full = player.storedPlaying ?? (worked == null ? null : worked + parAdjustment);
   if (full == null) return null;
   return holes === '18' ? full : roundStrokes(full / 2);
 }
