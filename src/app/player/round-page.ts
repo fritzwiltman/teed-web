@@ -3,7 +3,16 @@ import { RouterLink } from '@angular/router';
 import { formatDay, formatName, formatTime } from '../core/format';
 import { RoundsService } from '../core/rounds';
 import { SessionService } from '../core/session';
-import { UiButton, UiCard, UiHeaderBand, UiListRow, UiSectionHead, UiSkeleton } from '../core/ui';
+import {
+  BoardRow,
+  UiBoard,
+  UiButton,
+  UiCard,
+  UiHeaderBand,
+  UiListRow,
+  UiSectionHead,
+  UiSkeleton,
+} from '../core/ui';
 import { pointValueText } from '../scoring';
 
 const HOLES = { '18': '18 holes', front: 'Front 9', back: 'Back 9' };
@@ -14,7 +23,16 @@ const HOLES = { '18': '18 holes', front: 'Front 9', back: 'Back 9' };
  */
 @Component({
   selector: 'app-round-page',
-  imports: [RouterLink, UiButton, UiCard, UiHeaderBand, UiListRow, UiSectionHead, UiSkeleton],
+  imports: [
+    RouterLink,
+    UiBoard,
+    UiButton,
+    UiCard,
+    UiHeaderBand,
+    UiListRow,
+    UiSectionHead,
+    UiSkeleton,
+  ],
   template: `
     <ui-header-band
       [title]="'Round ' + (view()?.row?.round_number ?? '')"
@@ -33,16 +51,14 @@ const HOLES = { '18': '18 holes', front: 'Front 9', back: 'Back 9' };
           }
         </ui-card>
 
-        <ui-card aria-label="Strokes">
-          <ui-section-head title="Strokes" [note]="rule()" />
-          @for (p of v.result.players; track p.id) {
-            <ui-list-row
-              [title]="p.name"
-              [detail]="p.playing === null ? 'No handicap index' : 'Plays off ' + p.playing"
-              [value]="p.strokes === null ? '–' : '' + p.strokes"
-            />
-          }
-        </ui-card>
+        <ui-board
+          plain
+          aria-label="Strokes"
+          [title]="'Strokes · ' + rule()"
+          [columns]="strokes().columns"
+          [valueColumn]="strokes().columns.length - 1"
+          [rows]="strokes().rows"
+        />
 
         @if (scores().length) {
           <ui-card aria-label="Scores">
@@ -137,6 +153,32 @@ export class RoundPage {
           .map((h) => `${h.strokes[p.id]}${h.pickedUp[p.id] ? ' PU' : ''}`)
           .join(' · '),
       }));
+  });
+
+  /**
+   * Laid out like GHIN: the name over "18.7 HCI" (and the tees, when they differ), then CH
+   * (course handicap), PH (playing handicap, only when it isn't simply the CH) and SO (shots off
+   * the low man).
+   */
+  protected readonly strokes = computed<{ columns: string[]; rows: BoardRow[] }>(() => {
+    const players = this.view()?.result.players ?? [];
+    const allowance = Number(this.rounds.rules()?.handicap_allowance ?? 1);
+    const showPlaying = allowance !== 1 || players.some((p) => p.parAdjustment !== 0);
+    const text = (n: number | null) => (n === null ? '–' : `${n}`);
+    return {
+      columns: ['CH', ...(showPlaying ? ['PH'] : []), 'SO'],
+      rows: players.map((p) => ({
+        pos: '',
+        name: p.name,
+        detail: [
+          p.index === null ? 'No handicap index' : `${p.index.toFixed(1)} HCI`,
+          p.teeName ? `${p.teeName} tees` : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        cells: [text(p.course), ...(showPlaying ? [text(p.playing)] : []), text(p.strokes)],
+      })),
+    };
   });
 
   /** "100% · off the low man" */

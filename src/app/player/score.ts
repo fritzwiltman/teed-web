@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { formatDay, localDate } from '../core/format';
 import { RoundView, RoundsService } from '../core/rounds';
 import { ScoreQueue } from '../core/score-queue';
@@ -44,6 +45,7 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
 @Component({
   selector: 'app-score',
   imports: [
+    RouterLink,
     PlayerHeader,
     UiButton,
     UiCard,
@@ -79,8 +81,8 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
                 <ui-stepper-row
                   [name]="p.name"
                   [detail]="detail(h, p)"
-                  [value]="h.strokes[p.id] ?? h.par"
-                  [par]="h.strokes[p.id] === undefined ? null : h.par"
+                  [value]="h.strokes[p.id] ?? h.parFor[p.id]"
+                  [par]="h.strokes[p.id] === undefined ? null : h.parFor[p.id]"
                   [max]="15"
                   (valueChange)="enter(p.id, h.hole, $event)"
                 />
@@ -98,7 +100,17 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
             }
           </ui-card>
 
-          @if (closed(); as why) {
+          @if (needsIndex(); as name) {
+            <p class="error-text" role="alert">
+              @if (sessions.canManage()) {
+                <a [routerLink]="['/admin/trips', session()?.trip?.id, 'roster']"
+                  >Add {{ name }}'s handicap index</a
+                >
+              } @else {
+                Add {{ name }}'s handicap index
+              }
+            </p>
+          } @else if (closed(); as why) {
             <p class="center">{{ why }}</p>
           }
           <div class="pair">
@@ -184,7 +196,7 @@ export class Score {
   /** ?round=<id> opens that round instead of the one to score now. */
   readonly round = input<string>();
 
-  private readonly sessions = inject(SessionService);
+  protected readonly sessions = inject(SessionService);
   private readonly rounds = inject(RoundsService);
   protected readonly queue = inject(ScoreQueue);
   protected readonly session = this.sessions.session;
@@ -224,8 +236,17 @@ export class Score {
     const v = this.view();
     const s = this.session();
     if (!v || !s || v.result.state === 'final' || s.trip.status !== 'live') return false;
+    if (this.needsIndex()) return false;
     return v.result.players.some((p) => p.id === s.player.id) || this.sessions.canManage();
   });
+
+  /**
+   * The first player in the group with no handicap index, by name. Strokes are worked out from
+   * it, never guessed, so nobody scores until it is in.
+   */
+  protected readonly needsIndex = computed(
+    () => this.view()?.result.players.find((p) => p.playing === null)?.name ?? null,
+  );
 
   /** Why nobody can score, when that needs saying. */
   protected readonly closed = computed<string | null>(() => {
@@ -314,7 +335,8 @@ export class Score {
     const net = h.net[p.id];
     const state =
       h.strokes[p.id] === undefined ? 'not saved' : net === undefined ? '' : `net ${net}`;
-    return [dots, h.pickedUp[p.id] ? 'PU' : '', state].filter(Boolean).join(' · ') || null;
+    const ownPar = h.parFor[p.id] !== h.par ? `par ${h.parFor[p.id]}` : '';
+    return [ownPar, dots, h.pickedUp[p.id] ? 'PU' : '', state].filter(Boolean).join(' · ') || null;
   }
 
   /** What each game made of this hole, once everyone has a score on it. */
@@ -339,12 +361,12 @@ export class Score {
     const v = this.view();
     if (!v) return;
     for (const p of v.result.players)
-      if (h.strokes[p.id] === undefined) this.enter(p.id, h.hole, h.par);
+      if (h.strokes[p.id] === undefined) this.enter(p.id, h.hole, h.parFor[p.id]);
     if (this.following()) this.go(this.following());
   }
 
   protected pickupFor(h: HoleResult, p: PlayerResult): number {
-    return netDoubleBogey(h.par, h.received[p.id] ?? 0);
+    return netDoubleBogey(h.parFor[p.id] ?? h.par, h.received[p.id] ?? 0);
   }
 
   protected pickUp(h: HoleResult, p: PlayerResult): void {

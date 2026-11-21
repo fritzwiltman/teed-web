@@ -63,7 +63,9 @@ export interface SpectatorRound {
       name: string;
       position?: number;
       handicap_index?: number | null;
+      course_handicap?: number | null;
       playing_handicap?: number | null;
+      tee?: SpectatorRound['tee'];
     }[];
   }[];
   scores: { player_id: string; hole: number; strokes: number; picked_up?: boolean }[];
@@ -93,6 +95,16 @@ export function spectatorInput(r: SpectatorRound, trip: SpectatorView['trip']): 
         id: p.id,
         name: p.name,
         index: p.handicap_index == null ? null : Number(p.handicap_index),
+        tee: p.tee
+          ? {
+              par: p.tee.par ?? [],
+              strokeIndex: p.tee.stroke_index ?? [],
+              rating: p.tee.rating ?? null,
+              slope: p.tee.slope ?? null,
+              name: p.tee.name,
+            }
+          : null,
+        storedCourse: p.course_handicap ?? null,
         storedPlaying: p.playing_handicap ?? null,
       })),
     scores: r.scores.map((s) => ({

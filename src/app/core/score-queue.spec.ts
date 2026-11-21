@@ -174,8 +174,7 @@ describe('ScoreQueue', () => {
     await settle();
     queue.put('r1', 'dad', 7, 6); // tapped + while the 5 is in the air
     release({ error: null, status: 201 });
-    await settle();
-    await settle();
+    await vi.waitFor(() => expect(queue.count()).toBe(0));
     expect(sent(1)).toEqual([
       { round_id: 'r1', player_id: 'dad', hole: 7, strokes: 6, picked_up: false },
     ]);

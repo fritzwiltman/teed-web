@@ -34,7 +34,18 @@ export interface RoundRow {
     group_number: number;
     group_players: {
       position: number;
+      course_handicap?: number | null;
       playing_handicap: number | null;
+      /** The tees this player plays, when they aren't the round's. */
+      tee?: {
+        id: string;
+        name: string;
+        yards: number | null;
+        rating: number | null;
+        slope: number | null;
+        par: number[];
+        stroke_index: number[];
+      } | null;
       player: { id: string; name: string; initials: string; handicap_index: number | null } | null;
       scores: { hole: number; strokes: number; picked_up?: boolean }[];
     }[];
@@ -65,7 +76,8 @@ const ROUND_COLUMNS =
   'id, round_number, play_date, tee_time, status, holes, courses(id, name, short_name, photo_path), ' +
   'tees(id, name, yards, rating, slope, par, stroke_index, hole_yards), ' +
   'round_formats(format_key, settings, sort_order), ' +
-  'groups(id, group_number, group_players(position, playing_handicap, ' +
+  'groups(id, group_number, group_players(position, course_handicap, playing_handicap, ' +
+  'tee:tees(id, name, yards, rating, slope, par, stroke_index), ' +
   'player:trip_members(id, name, initials, handicap_index), scores(hole, strokes, picked_up)))';
 
 /** What the engine is given for a round: its rows, the house rules, and scores still on their way. */
@@ -106,6 +118,7 @@ export function roundInput(row: RoundRow, rules: TripRules, pending: PendingScor
       strokeIndex: row.tees?.stroke_index ?? [],
       rating: row.tees?.rating ?? null,
       slope: row.tees?.slope ?? null,
+      name: row.tees?.name ?? null,
     },
     rules: {
       allowance: Number(rules.handicap_allowance),
@@ -116,6 +129,16 @@ export function roundInput(row: RoundRow, rules: TripRules, pending: PendingScor
       id: gp.player!.id,
       name: gp.player!.name,
       index: gp.player!.handicap_index == null ? null : Number(gp.player!.handicap_index),
+      tee: gp.tee
+        ? {
+            par: gp.tee.par,
+            strokeIndex: gp.tee.stroke_index,
+            rating: gp.tee.rating,
+            slope: gp.tee.slope,
+            name: gp.tee.name,
+          }
+        : null,
+      storedCourse: gp.course_handicap ?? null,
       storedPlaying: gp.playing_handicap,
     })),
     scores: [...scores.values()],
