@@ -61,6 +61,7 @@ test('a round, end to end: set up, scored from two phones live, retried without 
   const stranger = await signIn('stranger-r');
   const made = await admin.from('trip_creators').insert({ name: 'Fritz', profile_id: fritz.id, claimed_at: new Date().toISOString() });
   assert.equal(made.error, null, made.error?.message);
+  await admin.from('profiles').update({ display_name: 'Fritz' }).eq('id', fritz.id);
 
   // ── The trip: 100% allowance, off the low man, three players ──
   const slug = `PGA${run}`.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
