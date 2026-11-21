@@ -48,7 +48,8 @@ const ROUND_COLUMNS =
   'id, round_number, play_date, tee_time, status, holes, courses(id, name, short_name, photo_path), ' +
   'tees(id, name, yards, rating, slope, par, stroke_index, hole_yards), ' +
   'round_formats(format_key, settings, sort_order), ' +
-  'groups(id, group_number, group_players(position, playing_handicap, ' +
+  'groups(id, group_number, group_players(position, course_handicap, playing_handicap, ' +
+  'tee:tees(id, name, yards, rating, slope, par, stroke_index), ' +
   'player:trip_members(id, name, initials, handicap_index), scores(hole, strokes, picked_up)))';
 
 const today = new Date().toISOString().slice(0, 10);
@@ -125,9 +126,6 @@ test('a round, end to end: set up, scored from two phones live, retried without 
       p_point_value_cents: 50,
       ...more,
     });
-  const noIndex = await setup(fritz.client, [fritzId, dadId, samId]);
-  assert.equal(noIndex.error?.message, "Add Sam's handicap index", 'a player with no index blocks round setup, by name');
-  assert.equal(noIndex.error?.code, '23514');
   assert.ok((await setup(dad.client, [fritzId, dadId, brotherId])).error, 'a player cannot set up a round');
   const saved = await setup(fritz.client, [fritzId, dadId, brotherId]);
   assert.equal(saved.error, null, saved.error?.message);
@@ -137,6 +135,15 @@ test('a round, end to end: set up, scored from two phones live, retried without 
   assert.deepEqual((await dad.client.from('rounds').select('id').eq('trip_id', trip)).data, []);
   const published = await fritz.client.from('trips').update({ status: 'live' }).eq('id', trip).select('status').single();
   assert.equal(published.data?.status, 'live', published.error?.message);
+
+  // ── A missing handicap index blocks scoring, not setup ──
+  const early = await setup(fritz.client, [fritzId, dadId, samId]);
+  assert.equal(early.error, null, `a round can be set up before everyone has an index: ${early.error?.message}`);
+  const tooSoon = await dad.client
+    .from('scores')
+    .upsert([{ round_id: early.data, player_id: dadId, hole: 1, strokes: 5, picked_up: false }], { onConflict: 'round_id,player_id,hole' });
+  assert.equal(tooSoon.error?.message, "Add Sam's handicap index", 'the first score needs every index, and says whose is missing');
+  assert.equal((await fritz.client.rpc('delete_round', { p_round_id: early.data })).error, null);
 
   // ── The app's own query, as a player ──
   const read = async (client) => {
@@ -154,10 +161,10 @@ test('a round, end to end: set up, scored from two phones live, retried without 
     [['stroke', {}], ['nine_point', { point_value_cents: 50 }]],
   );
   const group = row.groups[0].group_players.sort((a, b) => a.position - b.position);
-  assert.deepEqual(group.map((gp) => [gp.player.name, Number(gp.player.handicap_index), gp.playing_handicap, gp.scores]), [
-    ['Fritz', 18.6, null, []],
-    ['Dad', 22, null, []],
-    ['Brother', 9.4, null, []],
+  assert.deepEqual(group.map((gp) => [gp.player.name, Number(gp.player.handicap_index), gp.playing_handicap, gp.tee, gp.scores]), [
+    ['Fritz', 18.6, null, null, []],
+    ['Dad', 22, null, null, []],
+    ['Brother', 9.4, null, null, []],
   ]);
   assert.equal((await dad.client.rpc('finalize_due_rounds', { p_trip_id: trip })).error, null);
   assert.ok((await stranger.client.rpc('finalize_due_rounds', { p_trip_id: trip })).error, 'not for someone off the trip');
@@ -254,8 +261,22 @@ test('a round, end to end: set up, scored from two phones live, retried without 
   assert.equal((await enter(fritz.client, [score(dadId, 18, 5)])).error, null, 'the organizer can still fix a score');
 
   // ── A second round, and deleting the first renumbers it ──
-  const second = await setup(fritz.client, [brotherId, fritzId, dadId], { p_holes: 'front', p_point_value_cents: 100 });
+  // Dad plays his own tees in it.
+  const forward = palmer.tees.filter((t) => t.rating && t.slope && t.par.length === 18 && t.id !== tee.id).sort((a, b) => a.yards - b.yards)[0];
+  assert.ok(forward, 'Palmer has a second set of rated tees');
+  const second = await setup(fritz.client, [brotherId, fritzId, dadId], {
+    p_holes: 'front',
+    p_point_value_cents: 100,
+    p_player_tee_ids: [null, tee.id, forward.id],
+  });
   assert.equal(second.error, null, second.error?.message);
+  const own = (await read(dad.client))[1].groups[0].group_players.sort((a, b) => a.position - b.position);
+  assert.deepEqual(own.map((gp) => [gp.player.name, gp.tee?.name ?? null]), [
+    ['Brother', null],
+    ['Fritz', null], // given the round's own tees: stored as "the round's"
+    ['Dad', forward.name],
+  ]);
+  assert.equal(own[2].tee.par.length, 18, "the app's query brings a player's own tees, with par and stroke index");
   assert.deepEqual((await read(fritz.client)).map((r) => [r.round_number, r.holes]), [[1, '18'], [2, 'front']]);
 
   // ── The spectator link: the same rounds, with holes in play, and no point value ──
@@ -267,6 +288,8 @@ test('a round, end to end: set up, scored from two phones live, retried without 
   assert.equal(view.rounds[0].scores.length, 54);
   assert.equal(view.rounds[0].scores[0].picked_up, false, 'the spectator view says who picked up');
   assert.equal(view.rounds[0].tee.par.length, 18);
+  assert.equal(view.rounds[1].groups[0].players[2].tee.name, forward.name, "the spectator view has Dad's own tees");
+  assert.equal(view.rounds[1].groups[0].players[0].tee, null);
   assert.deepEqual(view.rounds[0].formats.map((f) => [f.format_key, f.settings]), [['stroke', {}], ['nine_point', {}]]);
   await fritz.client.from('trips').update({ spectators_see_money: true }).eq('id', trip);
   view = await watch();

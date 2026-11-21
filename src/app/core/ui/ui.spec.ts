@@ -320,7 +320,8 @@ describe('ui-board', () => {
   it('draws the rows it is given: under par in red, my row tinted, the live dot by the title', async () => {
     const { el } = await render(Host);
     const rows = [...el.querySelectorAll('tbody tr')];
-    const cells = (row: Element) => [...row.querySelectorAll('td')].map((c) => c.textContent);
+    const cells = (row: Element) =>
+      [...row.querySelectorAll('td')].map((c) => c.textContent?.trim());
     expect(rows.map(cells)).toEqual([
       ['1', 'Ben', '-3', '14'],
       ['2', 'Fritz', '+1', '14'],

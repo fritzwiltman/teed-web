@@ -1,13 +1,27 @@
-import { playingFor, strokesReceived } from './handicap';
+import {
+  courseHandicap,
+  parAdjustments,
+  playingFor,
+  roundStrokes,
+  strokesReceived,
+} from './handicap';
 import { ninePoint } from './nine-point';
 import { fewestPayments, ninePointNets } from './settle';
 import { holesInPlay, netDoubleBogey, strokesByHole } from './strokes';
-import { Payment, RoundInput } from './types';
+import { Payment, RoundInput, Tee } from './types';
 
 /** One player's round so far. */
 export interface PlayerResult {
   id: string;
   name: string;
+  /** Their handicap index. */
+  index: number | null;
+  /** The tees they play, when the group is not all on the same ones. */
+  teeName: string | null;
+  /** Course handicap from their own tees, rounded, for 18 holes. */
+  course: number | null;
+  /** Extra strokes for playing tees with a higher par than someone else in the group. */
+  parAdjustment: number;
   /** Playing handicap for this round; null when there is no handicap index to work from. */
   playing: number | null;
   /** Strokes received in this round (after the low man comes off). */
@@ -16,7 +30,10 @@ export interface PlayerResult {
   gross: number;
   /** Net over the holes scored; null with no handicap. */
   net: number | null;
-  /** Net against the par of the holes scored. */
+  /**
+   * Net against par over the holes scored. With mixed tees, par is the lowest-par tees' in the
+   * group, which is what the par adjustment levels everyone to.
+   */
   toPar: number | null;
   /** Holes scored. */
   thru: number;
@@ -30,8 +47,11 @@ export interface GameHole {
 
 export interface HoleResult {
   hole: number;
+  /** Par and stroke index from the round's tees. */
   par: number;
   strokeIndex: number;
+  /** Par from each player's own tees (it can differ on a hole when tees are mixed). */
+  parFor: Record<string, number>;
   /** Raw strokes entered, by player. Absent until entered. */
   strokes: Record<string, number | undefined>;
   /** Strokes received on this hole, by player. */
@@ -83,9 +103,18 @@ export interface RoundResult {
 export function scoreRound(input: RoundInput): RoundResult {
   const { tee, rules, players } = input;
   const holes = holesInPlay(input.holes, tee);
-  const playing = players.map((p) => playingFor(p, tee, rules, input.holes));
+  const tees: Tee[] = players.map((p) => p.tee ?? tee);
+  const totalPar = (t: Tee) => t.par.reduce((a, b) => a + b, 0);
+  const adjust = parAdjustments(tees.map(totalPar));
+  const playing = players.map((p, i) => playingFor(p, tees[i], rules, input.holes, adjust[i]));
   const received = strokesReceived(playing, rules.offLowMan);
-  const perHole = received.map((n) => (n == null ? null : strokesByHole(n, holes, tee)));
+  const perHole = received.map((n, i) => (n == null ? null : strokesByHole(n, holes, tees[i])));
+  const mixed = tees.some((t) => t !== tees[0]);
+  // "To par" is measured against the lowest-par tees in the group.
+  const reference = tees.reduce(
+    (low, t) => (totalPar(t) < totalPar(low) ? t : low),
+    tees[0] ?? tee,
+  );
 
   const entered = new Map<string, number>();
   const pickups = new Set<string>();
@@ -100,6 +129,7 @@ export function scoreRound(input: RoundInput): RoundResult {
       hole,
       par,
       strokeIndex: tee.strokeIndex[hole - 1],
+      parFor: {},
       strokes: {},
       received: {},
       net: {},
@@ -111,6 +141,8 @@ export function scoreRound(input: RoundInput): RoundResult {
     players.forEach((player, i) => {
       const strokes = entered.get(`${player.id}:${hole}`);
       const gets = perHole[i]?.get(hole);
+      const ownPar = tees[i].par[hole - 1] ?? par;
+      result.parFor[player.id] = ownPar;
       result.strokes[player.id] = strokes;
       result.received[player.id] = gets ?? 0;
       const pickedUp = strokes != null && pickups.has(`${player.id}:${hole}`);
@@ -118,7 +150,7 @@ export function scoreRound(input: RoundInput): RoundResult {
       if (strokes == null) result.complete = false;
       else if (gets != null) {
         const counted = rules.pickupNetDouble
-          ? Math.min(strokes, netDoubleBogey(par, gets))
+          ? Math.min(strokes, netDoubleBogey(ownPar, gets))
           : strokes;
         result.net[player.id] = counted - gets;
         result.standing[player.id] = pickedUp ? Infinity : strokes - gets;
@@ -131,11 +163,16 @@ export function scoreRound(input: RoundInput): RoundResult {
   const playerResults: PlayerResult[] = players.map((player, i) => {
     const scored = holeResults.filter((h) => h.strokes[player.id] != null);
     const gross = scored.reduce((n, h) => n + h.strokes[player.id]!, 0);
-    const par = scored.reduce((n, h) => n + h.par, 0);
+    const par = scored.reduce((n, h) => n + (reference.par[h.hole - 1] ?? h.par), 0);
     const net = received[i] == null ? null : scored.reduce((n, h) => n + h.net[player.id]!, 0);
+    const course = player.index == null ? null : courseHandicap(player.index, tees[i]);
     return {
       id: player.id,
       name: player.name,
+      index: player.index,
+      teeName: mixed ? (tees[i].name ?? null) : null,
+      course: player.storedCourse ?? (course == null ? null : roundStrokes(course)),
+      parAdjustment: player.storedPlaying == null ? adjust[i] : 0,
       playing: playing[i],
       strokes: received[i],
       gross,

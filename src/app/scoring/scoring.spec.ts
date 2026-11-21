@@ -740,6 +740,137 @@ describe('the trip', () => {
   });
 });
 
+describe('tees per player', () => {
+  // Back tees: rating 72, slope 113, par 72 (all 4s), so a course handicap is the index.
+  const BACK: Tee = { ...FLAT, name: 'Blue' };
+  // Forward tees with the same par: three strokes easier.
+  const FORWARD: Tee = { ...FLAT, rating: 69, name: 'White' };
+  // Forward tees where 18 is a par 3: par 71.
+  const SHORT: Tee = {
+    ...FLAT,
+    rating: 69,
+    par: [...Array<number>(17).fill(4), 3],
+    name: 'Gold',
+  };
+  const mixed = (tees: Record<string, Tee>, over: Partial<RoundInput> = {}, rules = FULL) =>
+    scoreRound(
+      ninePointRound({
+        tee: BACK,
+        rules,
+        players: TRIO.map((p) => ({ ...p, tee: tees[p.id] ?? null })),
+        scores: [],
+        ...over,
+      }),
+    );
+  const sheet = (round: RoundResult) =>
+    round.players.map((p) => [p.name, p.teeName, p.course, p.parAdjustment, p.playing, p.strokes]);
+
+  it('everyone on the round’s tees: no tee names, no adjustment', () => {
+    expect(sheet(mixed({}))).toEqual([
+      ['Fritz', null, 10, 0, 10, 0],
+      ['Dad', null, 20, 0, 20, 10],
+      ['Brother', null, 10, 0, 10, 0],
+    ]);
+  });
+
+  it('mixed tees with the same par: each course handicap comes from its own rating and slope', () => {
+    // Dad moves up: 20 × 113 / 113 + (69 − 72) = 17. Same par, so nothing else changes.
+    const round = mixed({ dad: FORWARD });
+    expect(sheet(round)).toEqual([
+      ['Fritz', 'Blue', 10, 0, 10, 0],
+      ['Dad', 'White', 17, 0, 17, 7],
+      ['Brother', 'Blue', 10, 0, 10, 0],
+    ]);
+    // His seven strokes fall on the seven hardest holes.
+    expect(round.holes.map((h) => h.received['dad'])).toEqual([
+      1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+  });
+
+  it('mixed tees with different pars: the higher par gets the difference', () => {
+    // Fritz and Brother play Gold (par 71): 10 + (69 − 71) = 8. Dad stays on Blue (par 72): 20,
+    // plus one for the par difference = 21. Off the low man: 13, not 12.
+    const round = mixed({ me: SHORT, bro: SHORT });
+    expect(sheet(round)).toEqual([
+      ['Fritz', 'Gold', 8, 0, 8, 0],
+      ['Dad', 'Blue', 20, 1, 21, 13],
+      ['Brother', 'Gold', 8, 0, 8, 0],
+    ]);
+  });
+
+  it('the adjustment is added after the allowance', () => {
+    // 90%: Fritz 8 × 0.9 = 7.2 → 7. Dad 20 × 0.9 = 18, + 1 = 19. Off the low man: 12.
+    const round = mixed({ me: SHORT, bro: SHORT }, {}, NINETY);
+    expect(round.players.map((p) => [p.playing, p.strokes])).toEqual([
+      [7, 0],
+      [19, 12],
+      [7, 0],
+    ]);
+  });
+
+  it('two players who each play to their handicap tie, which is what the adjustment is for', () => {
+    // Fritz, off 8 on the par 71: bogeys 1 to 8, pars in. Gross 79.
+    // Dad, off 20 on the par 72: doubles 1 and 2, bogeys the rest. Gross 92, less 13 = 79.
+    // Brother pars everything from Gold: 71.
+    const me = [...Array<number>(8).fill(5), ...Array<number>(9).fill(4), 3];
+    const dad = [6, 6, ...Array<number>(16).fill(5)];
+    const bro = [...Array<number>(17).fill(4), 3];
+    const scores = [me, dad, bro].flatMap((card, i) =>
+      card.map((strokes, h) => ({ playerId: ['me', 'dad', 'bro'][i], hole: h + 1, strokes })),
+    );
+    const round = mixed({ me: SHORT, bro: SHORT }, { scores });
+    expect(round.players.map((p) => [p.name, p.gross, p.net, p.toPar])).toEqual([
+      ['Fritz', 79, 79, 8],
+      ['Dad', 92, 79, 8],
+      ['Brother', 71, 71, 0],
+    ]);
+    expect(roundBoard(round).rows.map((r) => [r.pos, r.name, ...r.cells.slice(0, 3)])).toEqual([
+      ['1', 'Brother', '71', '71', 'E'],
+      ['T2', 'Fritz', '79', '79', '+8'],
+      ['T2', 'Dad', '92', '79', '+8'],
+    ]);
+    // Hole 18 is a par 3 for Fritz and Brother and a par 4 for Dad; the game compares strokes.
+    expect(round.holes[17].parFor).toEqual({ me: 3, dad: 4, bro: 3 });
+    expect(round.holes[17].games[0].values).toEqual({ me: 4, dad: 1, bro: 4 });
+    expectTotalsAddUp(round);
+    expect(total(round.games[0].total)).toBe(162);
+  });
+
+  it('net double bogey is from the player’s own par', () => {
+    // Hole 18, nobody gets a stroke there: Fritz (par 3) counts at most 5, Dad (par 4) at most 6.
+    const round = mixed(
+      { me: SHORT, bro: SHORT },
+      {
+        scores: [
+          { playerId: 'me', hole: 18, strokes: 8 },
+          { playerId: 'dad', hole: 18, strokes: 8 },
+          { playerId: 'bro', hole: 18, strokes: 3 },
+        ],
+      },
+    );
+    expect(round.holes[17].net).toEqual({ me: 5, dad: 6, bro: 3 });
+  });
+
+  it('a recorded playing handicap is left alone', () => {
+    const round = mixed(
+      { me: SHORT, bro: SHORT },
+      {
+        players: TRIO.map((p) => ({
+          ...p,
+          tee: p.id === 'dad' ? null : SHORT,
+          storedPlaying: 15,
+          storedCourse: 17,
+        })),
+      },
+    );
+    expect(round.players.map((p) => [p.course, p.parAdjustment, p.playing])).toEqual([
+      [17, 0, 15],
+      [17, 0, 15],
+      [17, 0, 15],
+    ]);
+  });
+});
+
 describe('the engine checks itself', () => {
   it('the 9-point game is for three', () => {
     expect(() => ninePoint(['a', 'b'], [1], () => 4)).toThrow(NinePointError);

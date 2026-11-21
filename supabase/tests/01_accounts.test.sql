@@ -471,7 +471,7 @@ select is((select array_agg(k order by k) from jsonb_object_keys(public.spectato
           array['course', 'formats', 'groups', 'holes', 'id', 'play_date', 'presses', 'round_number', 'scores', 'status', 'tee', 'tee_time'],
           'a round has its course, tee, formats, groups, scores and presses');
 select is((select array_agg(k order by k) from jsonb_object_keys(public.spectator_view('hash-one') #> '{rounds,0,groups,0,players,0}') k),
-          array['course_handicap', 'handicap_index', 'id', 'initials', 'name', 'playing_handicap', 'position', 'team'],
+          array['course_handicap', 'handicap_index', 'id', 'initials', 'name', 'playing_handicap', 'position', 'team', 'tee'],
           'a player in a group is a name and handicaps: no email, role, account or paid status');
 select is(jsonb_array_length(public.spectator_view('hash-one') #> '{rounds,0,scores}'), 2, 'the scores are there');
 select is(public.spectator_view('hash-one') #> '{rounds,0,formats,0,settings}', '{"presses": "manual"}'::jsonb,

@@ -50,6 +50,8 @@ export interface RoundSetupFields {
   tee_time: string | null;
   /** The group, in playing order. */
   player_ids: string[];
+  /** A player's own tees, by player id. Absent or null: the round's tees. */
+  player_tees: Record<string, string | null>;
   nine_point: boolean;
   point_value_cents: number;
 }
@@ -239,17 +241,19 @@ export class AdminData {
     const { data, error } = await this.db
       .from('rounds')
       .select(
-        'id, round_number, status, course_id, tee_id, holes, play_date, tee_time, round_formats(format_key, settings), groups(group_number, group_players(position, player_id, scores(count)))',
+        'id, round_number, status, course_id, tee_id, holes, play_date, tee_time, round_formats(format_key, settings), groups(group_number, group_players(position, player_id, tee_id, scores(count)))',
       )
       .eq('id', roundId)
       .maybeSingle();
     if (error || !data) fail(error, "Couldn't load that round.");
     const row = data as unknown as Omit<
       RoundSetupRow,
-      'player_ids' | 'nine_point' | 'point_value_cents' | 'scored'
+      'player_ids' | 'player_tees' | 'nine_point' | 'point_value_cents' | 'scored'
     > & {
       round_formats: { format_key: string; settings: Record<string, unknown> }[];
-      groups: (ScoredGroup & { group_players: { position: number; player_id: string }[] })[];
+      groups: (ScoredGroup & {
+        group_players: { position: number; player_id: string; tee_id: string | null }[];
+      })[];
     };
     const { round_formats, groups, ...round } = row;
     const nine = round_formats.find((f) => f.format_key === 'nine_point');
@@ -259,6 +263,9 @@ export class AdminData {
         .flatMap((g) => g.group_players)
         .sort((a, b) => a.position - b.position)
         .map((gp) => gp.player_id),
+      player_tees: Object.fromEntries(
+        groups.flatMap((g) => g.group_players).map((gp) => [gp.player_id, gp.tee_id]),
+      ),
       nine_point: !!nine,
       point_value_cents: Number(nine?.settings['point_value_cents']) || 0,
       scored: hasScores(groups),
@@ -299,6 +306,10 @@ export class AdminData {
       p_player_ids: f.player_ids,
       p_nine_point: f.nine_point,
       p_point_value_cents: f.nine_point ? f.point_value_cents : null,
+      p_player_tee_ids: f.player_ids.map((id) => {
+        const tee = f.player_tees[id];
+        return tee && tee !== f.tee_id ? tee : null;
+      }),
     });
     if (error) fail(error, "Couldn't save the round.");
     return data as string;

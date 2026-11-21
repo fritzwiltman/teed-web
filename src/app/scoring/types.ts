@@ -9,6 +9,8 @@ export interface Tee {
   strokeIndex: number[];
   rating: number | null;
   slope: number | null;
+  /** "Blue". Only for showing. */
+  name?: string | null;
 }
 
 /** The trip's house rules. */
@@ -26,6 +28,10 @@ export interface RoundPlayer {
   name: string;
   /** The handicap index locked for this trip. */
   index: number | null;
+  /** The tees this player plays, when they aren't the round's. */
+  tee?: Tee | null;
+  /** A course handicap recorded for this round (Southern Pines 2026 only), for showing. */
+  storedCourse?: number | null;
   /**
    * A playing handicap recorded for this round (after the allowance, before the low man).
    * Only Southern Pines 2026 has these, read off GHIN; when present it is used as is.

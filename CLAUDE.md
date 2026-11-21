@@ -49,7 +49,9 @@ docs/                     notes; wireframes live at the link above
 - **Scores are raw strokes per hole.** Formats (stroke, Stableford, Nassau with presses, Sixes, skins,
   scramble, alt shot, wolf, 9-point, Ryder Cup) are computed from them and never stored as results.
 - **Handicaps are worked out, never guessed.** New rounds calculate strokes from each player's handicap index
-  and the tees' rating and slope; a player with no index blocks round setup. Only Southern Pines 2026 has stored
+  and their own tees' rating, slope and par (a player's tees default to the round's), plus the par difference
+  when pars differ within the group. A round can be set up before everyone's index is in, but nobody can score
+  it until every player in the group has one ("Add Dad's handicap index"). Only Southern Pines 2026 has stored
   per-round handicaps.
 - **Money is integer cents,** and every settle-up sums to zero. The 9-point game checks itself: 9 a hole, 81 a
   nine, 162 a round.

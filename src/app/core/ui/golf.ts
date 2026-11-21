@@ -219,6 +219,8 @@ export interface BoardRow {
   thru?: string;
   /** One cell per column, for a board with `columns`. */
   cells?: string[];
+  /** A small line under the name: "18.7 HCI". */
+  detail?: string;
   /** Under par: the value is drawn in red. */
   under?: boolean;
   /** The row of the person looking. */
@@ -233,7 +235,7 @@ export interface BoardRow {
   selector: 'ui-board',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [UiLiveDot],
-  host: { '[class.mini]': 'mini()', '[class.wide]': '!!columns()' },
+  host: { '[class.mini]': 'mini()', '[class.wide]': '!!columns()', '[class.plain]': 'plain()' },
   template: `
     <table>
       <caption>
@@ -246,8 +248,10 @@ export interface BoardRow {
       </caption>
       <thead>
         <tr>
-          <th scope="col" class="pos">Pos</th>
-          <th scope="col" class="name">Name</th>
+          @if (!plain()) {
+            <th scope="col" class="pos">Pos</th>
+          }
+          <th scope="col" class="name">{{ plain() ? nameLabel() : 'Name' }}</th>
           @if (columns(); as names) {
             @for (name of names; track $index) {
               <th scope="col" class="num">{{ name }}</th>
@@ -261,8 +265,15 @@ export interface BoardRow {
       <tbody>
         @for (row of rows(); track $index) {
           <tr [class.me]="row.me">
-            <td class="pos">{{ row.pos }}</td>
-            <td class="name">{{ row.name }}</td>
+            @if (!plain()) {
+              <td class="pos">{{ row.pos }}</td>
+            }
+            <td class="name">
+              {{ row.name }}
+              @if (row.detail) {
+                <span class="sub">{{ row.detail }}</span>
+              }
+            </td>
             @if (columns()) {
               @for (cell of row.cells ?? []; track $index) {
                 <td
@@ -333,9 +344,25 @@ export interface BoardRow {
       width: 46px;
       padding: 0 var(--s1);
     }
+    :host(.plain) .name {
+      padding-left: var(--s4);
+    }
+    :host(.plain) td {
+      height: 56px;
+    }
+    .sub {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+    }
     :host(.wide) th {
       letter-spacing: 0;
       white-space: nowrap;
+    }
+    :host(.wide) th.num:last-child,
+    :host(.wide) td.num:last-child {
+      width: 58px;
+      padding-right: var(--s4);
     }
     :host(.wide) .pos {
       width: 44px;
@@ -367,6 +394,10 @@ export class UiBoard {
   readonly columns = input<string[]>();
   /** Which of `columns` is drawn big, and red when the row is under par. */
   readonly valueColumn = input(0);
+  /** A table of people rather than a ranking: no Pos column. */
+  readonly plain = input(false, { transform: booleanAttribute });
+  /** The heading over the names of a `plain` table. */
+  readonly nameLabel = input('Player');
   readonly live = input(false, { transform: booleanAttribute });
   readonly mini = input(false, { transform: booleanAttribute });
 }

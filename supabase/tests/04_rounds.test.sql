@@ -71,9 +71,6 @@ select throws_ok($$ select tests.save('dad', '{fritz,dad,brother}') $$, '42501',
 select tests.as_postgres();
 select throws_ok($$ select tests.save('zed', '{fritz,dad,brother}') $$, '42501', null, 'nor can another trip''s organizer');
 select tests.as_postgres();
-select throws_ok($$ select tests.save('fritz', '{fritz,dad,sam}') $$, '23514', 'Add Sam''s handicap index',
-                 'a player with no handicap index blocks round setup, by name');
-select tests.as_postgres();
 select throws_ok($$ select tests.save('fritz', '{fritz,dad}') $$, '23514', null, 'the 9-point game needs exactly three players');
 select tests.as_postgres();
 select throws_ok($$ select tests.save('fritz', '{fritz,dad,brother}', cents => 0) $$, '23514', null, 'and a point value');
@@ -120,6 +117,75 @@ select tests.save('fritz', '{fritz,dad}', nine => false, round => (select r1 fro
 select is((select count(*) from public.round_formats f where f.round_id = (select r1 from made)), 1::bigint,
           'turning the 9-point game off leaves net stroke play');
 select tests.save('fritz', '{fritz,dad,brother}', round => (select r1 from made));
+
+-- ── A missing handicap index blocks scoring, not setup ──────────────────────
+
+create temp table early as select tests.save('fritz', '{fritz,dad,sam}') as r;
+grant select on early to public;
+select isnt((select r from early), null, 'a round can be set up before everyone has a handicap index');
+select tests.as_user('dad');
+select throws_ok($$ insert into public.scores (round_id, player_id, hole, strokes) values ((select r from early), tests.id('dad'), 1, 5) $$,
+                 '23514', 'Add Sam''s handicap index', 'but its first score needs them all, and says whose is missing');
+select tests.as_user('fritz');
+select throws_ok($$ insert into public.scores (round_id, player_id, hole, strokes) values ((select r from early), tests.id('fritz'), 1, 5) $$,
+                 '23514', 'Add Sam''s handicap index', 'for the organizer too');
+select public.set_member_index(tests.id('sam'), 12.0);
+insert into public.scores (round_id, player_id, hole, strokes) values ((select r from early), tests.id('fritz'), 1, 5);
+select tests.as_postgres();
+select is((select count(*) from public.scores where round_id = (select r from early)), 1::bigint,
+          'once the index is in, scoring starts');
+update public.trip_members set handicap_index = null where id = tests.id('sam');
+select tests.as_user('fritz');
+select public.delete_round((select r from early));
+select tests.as_postgres();
+
+-- ── Tees per player ─────────────────────────────────────────────────────────
+
+insert into public.tees (id, course_id, name, rating, slope, par, stroke_index) values
+  (tests.id('gold'), tests.id('palmer'), 'Gold', 68.1, 121,
+   '{4,4,3,5,4,4,3,5,4,4,4,3,5,4,4,3,4,4}', '{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18}');
+
+create function tests.save_tees(tees text[], round uuid default null) returns uuid language plpgsql as $$
+declare v uuid;
+begin
+  perform tests.as_user('fritz');
+  v := public.save_round(tests.id('trip'), round, tests.id('palmer'), tests.id('white'), '18', current_date, '08:10',
+         array[tests.id('fritz'), tests.id('dad'), tests.id('brother')], true, 50,
+         (select array_agg(case when t is null then null else tests.id(t) end order by n) from unnest(tees) with ordinality as x (t, n)));
+  perform tests.as_postgres();
+  return v;
+end;
+$$;
+
+create temp table mixed as select tests.save_tees(array[null, 'gold', 'white']) as r;
+grant select on mixed to public;
+select results_eq(
+  $$ select m.name, gp.tee_id from public.group_players gp join public.trip_members m on m.id = gp.player_id
+     where gp.round_id = (select r from mixed) order by gp.position $$,
+  $$ values ('Fritz', null::uuid), ('Dad', tests.id('gold')), ('Brother', null::uuid) $$,
+  'each player has their own tees; null (and the round''s own tees) means the round''s');
+select tests.save_tees(array[null, null, null]::text[], (select r from mixed));
+select is((select count(*) from public.group_players where round_id = (select r from mixed) and tee_id is not null), 0::bigint,
+          'saving again can put everyone back on the round''s tees');
+select throws_ok($$ select tests.save_tees(array[null, 'unrated', null], (select r from mixed)) $$, '23514', null,
+                 'a player''s tees need a rating and slope too');
+select tests.as_postgres();
+select throws_ok($$ select tests.save_tees(array[null, 'nine', null], (select r from mixed)) $$, '23514', null,
+                 'and must be on the round''s course');
+select tests.as_postgres();
+select throws_ok($$ select tests.save_tees(array[null, 'gold'], (select r from mixed)) $$, '23514', null,
+                 'tees are given for every player or for none');
+select tests.as_postgres();
+select tests.save_tees(array['gold', null, null], (select r from mixed));
+insert into public.spectator_links (trip_id, nonce, token_hash) values (tests.id('trip'), 'm', 'mixed-hash');
+select is(public.spectator_view('mixed-hash') #>> '{rounds,1,groups,0,players,0,tee,name}', 'Gold',
+          'the spectator view carries a player''s own tees');
+select is(public.spectator_view('mixed-hash') #> '{rounds,1,groups,0,players,1,tee}', 'null'::jsonb,
+          'and nothing for someone on the round''s tees');
+delete from public.spectator_links where trip_id = tests.id('trip');
+select tests.as_user('fritz');
+select public.delete_round((select r from mixed));
+select tests.as_postgres();
 
 -- ── Scoring, Complete, Final ────────────────────────────────────────────────
 

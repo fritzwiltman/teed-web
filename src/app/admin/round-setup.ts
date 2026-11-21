@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { pointValueText } from '../scoring';
 import {
   Choice,
@@ -22,12 +22,12 @@ const POINT_VALUES = [25, 50, 100];
 /**
  * Round setup: the course and tees, 18 holes or a nine, the day and tee time, the group, and the
  * game. Net stroke play is always on; the 9-point game is offered to a group of exactly three.
- * A player with no handicap index blocks saving: strokes are worked out from it, never guessed.
+ * Each player can play their own tees. A handicap index isn't needed yet: it is needed before
+ * the round's first score.
  */
 @Component({
   selector: 'app-round-setup',
   imports: [
-    RouterLink,
     UiButton,
     UiCard,
     UiCheckbox,
@@ -121,6 +121,22 @@ const POINT_VALUES = [25, 50, 100];
                   (checkedChange)="pick(player.id, $event)"
                 />
               </label>
+              @if (f().player_ids.includes(player.id) && tees().length > 1) {
+                <div class="own-tees">
+                  <ui-field class="compact" [label]="player.name + '’s tees'">
+                    <select
+                      [attr.name]="'tee-' + player.id"
+                      (change)="setPlayerTee(player.id, text($event))"
+                    >
+                      @for (tee of tees(); track tee.id) {
+                        <option [value]="tee.id" [selected]="tee.id === teeFor(player.id)">
+                          {{ teeLabel(tee) }}
+                        </option>
+                      }
+                    </select>
+                  </ui-field>
+                </div>
+              }
             }
           </ui-card>
 
@@ -151,11 +167,6 @@ const POINT_VALUES = [25, 50, 100];
             }
           </ui-card>
 
-          @for (name of missingIndex(); track name) {
-            <p class="error-text" role="alert">
-              <a [routerLink]="['/admin/trips', id(), 'roster']">Add {{ name }}'s handicap index</a>
-            </p>
-          }
           @if (error(); as text) {
             <p class="error-text" role="alert">{{ text }}</p>
           }
@@ -189,6 +200,9 @@ const POINT_VALUES = [25, 50, 100];
     .value {
       padding: var(--s2) var(--s4) var(--s4);
     }
+    .own-tees {
+      padding: 0 var(--s4) var(--s3);
+    }
     .danger {
       color: var(--red);
     }
@@ -219,6 +233,7 @@ export class RoundSetup {
     play_date: '',
     tee_time: null,
     player_ids: [],
+    player_tees: {},
     nine_point: false,
     point_value_cents: 50,
   });
@@ -237,21 +252,9 @@ export class RoundSetup {
     () => this.courses().find((c) => c.id === this.f().course_id)?.tees ?? [],
   );
   protected readonly threesome = computed(() => this.f().player_ids.length === 3);
-  /** Picked players who have no handicap index yet, by name. */
-  protected readonly missingIndex = computed(() =>
-    this.roster()
-      .filter((p) => this.f().player_ids.includes(p.id) && p.handicap_index === null)
-      .map((p) => p.name),
-  );
   protected readonly ready = computed(() => {
     const f = this.f();
-    return (
-      !!f.course_id &&
-      !!f.tee_id &&
-      !!f.play_date &&
-      f.player_ids.length > 0 &&
-      !this.missingIndex().length
-    );
+    return !!f.course_id && !!f.tee_id && !!f.play_date && f.player_ids.length > 0;
   });
 
   constructor() {
@@ -275,6 +278,7 @@ export class RoundSetup {
       ...f,
       course_id: courseId,
       tee_id: tees.length === 1 ? tees[0].id : '',
+      player_tees: {}, // another course: everyone back on the round's tees
     }));
     this.error.set(null);
   }
@@ -288,6 +292,19 @@ export class RoundSetup {
     ]
       .filter(Boolean)
       .join(' · ');
+  }
+
+  /** The tees a player plays: their own, else the round's. */
+  protected teeFor(playerId: string): string {
+    return this.f().player_tees[playerId] || this.f().tee_id;
+  }
+
+  /** Picking the round's tees for a player puts them back on "the round's tees". */
+  protected setPlayerTee(playerId: string, teeId: string): void {
+    this.set('player_tees', {
+      ...this.f().player_tees,
+      [playerId]: teeId && teeId !== this.f().tee_id ? teeId : null,
+    });
   }
 
   /** Players keep the roster's order in the group. */
@@ -373,6 +390,7 @@ export class RoundSetup {
           play_date: day > trip.end_date ? trip.end_date : day,
           tee_time: null,
           player_ids: players,
+          player_tees: {},
           nine_point: previous ? previous.nine_point : players.length === 3,
           point_value_cents: lastValue ?? 50,
         });

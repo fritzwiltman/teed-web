@@ -1,5 +1,7 @@
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { SwUpdate } from '@angular/service-worker';
+import { Subject } from 'rxjs';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { App } from './app';
 import { routes } from './app.routes';
@@ -64,6 +66,8 @@ interface Options {
   rules?: Partial<TripRules>;
   /** Scores still waiting to reach the server. */
   syncing?: number;
+  /** The service worker: false for a browser without one. */
+  worker?: boolean;
 }
 
 /** Boots the app at a URL, signed in (or not) with the given open trip, and returns the page. */
@@ -188,6 +192,14 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     finalize,
   };
   const queue = { count: signal(options.syncing ?? 0), refused: signal(0) };
+  // The service worker's updates: `ready()` is a new build arriving while the app is open.
+  const versions = new Subject<{ type: string }>();
+  const updates = {
+    isEnabled: options.worker ?? true,
+    versionUpdates: versions,
+    checkForUpdate: vi.fn(async () => false),
+    activateUpdate: vi.fn(async () => true),
+  };
   const promptInstall = vi.fn(async () => {});
   const share = vi.fn(async (_data: { text: string }) => {});
   Object.defineProperty(navigator, 'share', { configurable: true, value: share });
@@ -201,6 +213,7 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
       { provide: SessionService, useValue: sessions },
       { provide: RoundsService, useValue: rounds },
       { provide: ScoreQueue, useValue: queue },
+      { provide: SwUpdate, useValue: updates },
       {
         provide: InstallService,
         useValue: {
@@ -263,6 +276,8 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     promptInstall,
     setScore,
     finalize,
+    updates,
+    versions,
     queue,
     el,
     click,
@@ -681,6 +696,19 @@ describe('App', () => {
       .map((part) => row.querySelector(part)?.textContent?.trim())
       .filter(Boolean)
       .join(' ');
+  /** A plain board's headings, and its rows as name, the line under it, then the cells. */
+  const heads = (board: Element) =>
+    [...board.querySelectorAll('thead th')].map((th) => th.textContent?.trim());
+  const sheet = (board: Element) =>
+    [...board.querySelectorAll('tbody tr')].map((tr) => {
+      const name = tr.querySelector('td.name')!;
+      const sub = name.querySelector('.sub')?.textContent?.trim() ?? '';
+      return [
+        name.textContent!.replace(sub, '').trim(),
+        sub,
+        ...[...tr.querySelectorAll('td.num')].map((td) => td.textContent?.trim()),
+      ];
+    });
   const stepper = (el: HTMLElement, name: string) =>
     [...el.querySelectorAll('ui-stepper-row')].find(
       (row) => row.querySelector('.name')?.textContent?.trim() === name,
@@ -846,6 +874,50 @@ describe('App', () => {
       expect(organizer.el.querySelectorAll('ui-stepper-row')).toHaveLength(3);
     });
 
+    it('nobody scores until every player has a handicap index', async () => {
+      const row = playing();
+      row.groups[0].group_players.find((gp) => gp.player?.id === 'dad')!.player!.handicap_index =
+        null;
+      const player = await boot('/score', ME, { live: [row] });
+      expect(player.el.querySelector('ui-stepper-row')).toBeNull();
+      expect(player.el.querySelector('[role=alert]')?.textContent?.trim()).toBe(
+        "Add Dad's handicap index",
+      );
+      expect(player.el.querySelector('[role=alert] a')).toBeNull();
+      expect(
+        [...player.el.querySelectorAll('button')].some((b) =>
+          /Save|Pick up/.test(b.textContent ?? ''),
+        ),
+      ).toBe(false);
+      TestBed.resetTestingModule();
+      // The organizer gets the way to People.
+      const organizer: TripSession = { ...ME, player: { ...ME.player, role: 'organizer' } };
+      const { el } = await boot('/score', organizer, { live: [row] });
+      expect(el.querySelector('[role=alert] a')?.getAttribute('href')).toBe(
+        '/admin/trips/t1/roster',
+      );
+      expect(el.querySelector('ui-stepper-row')).toBeNull();
+    });
+
+    it('with mixed tees, each row starts at that player’s own par', async () => {
+      const row = playing();
+      const gold = {
+        ...row.tees!,
+        id: 'gold',
+        name: 'Gold',
+        rating: 69,
+        par: [3, ...Array<number>(17).fill(4)],
+      };
+      row.groups[0].group_players.find((gp) => gp.player?.id === 'bro')!.tee = gold;
+      const { el, setScore, click } = await boot('/score', ME, { live: [row] });
+      expect(stepper(el, 'Fritz').querySelector('output')?.textContent?.trim()).toBe('4');
+      expect(stepper(el, 'Brother').querySelector('output')?.textContent?.trim()).toBe('3');
+      expect(stepper(el, 'Brother').textContent).toContain('par 3');
+      await click('Save · Hole 2');
+      expect(setScore).toHaveBeenCalledWith('r1', 'bro', 1, 3, false);
+      expect(setScore).toHaveBeenCalledWith('r1', 'me', 1, 4, false);
+    });
+
     it('a draft trip cannot be scored yet', async () => {
       const draft: TripSession = { ...ME, trip: { ...ME.trip, status: 'draft' } };
       const { el } = await boot('/score', draft, { live: [playing()] });
@@ -996,12 +1068,14 @@ describe('App', () => {
       expect(setup.textContent).toContain('Blue · 6,412 yds · par 72');
       expect(setup.textContent).toContain('18 holes');
       expect(setup.textContent).toMatch(/9-point game\s*50¢ a point/);
-      const strokes = el.querySelector('[aria-label=Strokes]')!;
-      expect(strokes.querySelector('.note')?.textContent).toContain('100% · off the low man');
-      expect([...strokes.querySelectorAll('ui-list-row')].map((r) => rowText(r))).toEqual([
-        'Fritz Plays off 10 0',
-        'Dad Plays off 20 10',
-        'Brother Plays off 10 0',
+      // Like GHIN: the name over the index, then CH and SO. No PH at 100%.
+      const strokes = el.querySelector('ui-board[aria-label=Strokes]')!;
+      expect(strokes.querySelector('caption')?.textContent).toContain('100% · off the low man');
+      expect(heads(strokes)).toEqual(['Player', 'CH', 'SO']);
+      expect(sheet(strokes)).toEqual([
+        ['Fritz', '10.0 HCI', '10', '0'],
+        ['Dad', '20.0 HCI', '20', '10'],
+        ['Brother', '10.0 HCI', '10', '0'],
       ]);
       expect(
         [...el.querySelectorAll('a')].some((a) => a.textContent?.trim() === 'Edit round'),
@@ -1014,6 +1088,58 @@ describe('App', () => {
           .find((a) => a.textContent?.trim() === 'Edit round')
           ?.getAttribute('href'),
       ).toBe('/admin/trips/t1/rounds/r1');
+    });
+
+    it('shows PH when the allowance is not 100%', async () => {
+      const { el } = await boot('/rounds/r1', ME, {
+        live: [playing()],
+        rules: { handicap_allowance: 0.9 },
+      });
+      const strokes = el.querySelector('ui-board[aria-label=Strokes]')!;
+      expect(strokes.querySelector('caption')?.textContent).toContain('90% · off the low man');
+      expect(heads(strokes)).toEqual(['Player', 'CH', 'PH', 'SO']);
+      expect(sheet(strokes)).toEqual([
+        ['Fritz', '10.0 HCI', '10', '9', '0'],
+        ['Dad', '20.0 HCI', '20', '18', '9'],
+        ['Brother', '10.0 HCI', '10', '9', '0'],
+      ]);
+    });
+
+    it('with mixed tees, shows each player’s tees, and PH when the pars differ', async () => {
+      // Dad stays on Blue (par 72). Fritz and Brother play Gold: rating 69, and 18 is a par 3.
+      const row = playing();
+      const gold = {
+        id: 'gold',
+        name: 'Gold',
+        yards: 5900,
+        rating: 69,
+        slope: 113,
+        par: [...Array<number>(17).fill(4), 3],
+        stroke_index: row.tees!.stroke_index,
+      };
+      for (const gp of row.groups[0].group_players) if (gp.player?.id !== 'dad') gp.tee = gold;
+      const { el } = await boot('/rounds/r1', ME, { live: [row] });
+      const strokes = el.querySelector('ui-board[aria-label=Strokes]')!;
+      expect(heads(strokes)).toEqual(['Player', 'CH', 'PH', 'SO']);
+      // 10 + (69 − 71) = 8. Dad: 20, plus 1 for the higher par = 21; 13 off the low man.
+      expect(sheet(strokes)).toEqual([
+        ['Fritz', '10.0 HCI · Gold tees', '8', '8', '0'],
+        ['Dad', '20.0 HCI · Blue tees', '20', '21', '13'],
+        ['Brother', '10.0 HCI · Gold tees', '8', '8', '0'],
+      ]);
+    });
+
+    it('says who has no handicap index', async () => {
+      const row = playing();
+      row.groups[0].group_players.find((gp) => gp.player?.id === 'dad')!.player!.handicap_index =
+        null;
+      const { el } = await boot('/rounds/r1', ME, { live: [row] });
+      expect(sheet(el.querySelector('ui-board[aria-label=Strokes]')!)[1]).toEqual([
+        'Dad',
+        'No handicap index',
+        '–',
+        '–',
+      ]);
     });
 
     it('shows the scores, a pickup marked "PU"', async () => {
@@ -1219,6 +1345,46 @@ describe('App', () => {
       await late.signIn(null);
       expect(late.el.querySelector('[role=alert]')?.textContent).toContain('used or replaced');
       expect(late.router.url).toBe('/invite/TOKEN-1');
+    });
+  });
+
+  describe('a new version', () => {
+    const toast = (el: HTMLElement) => el.querySelector('ui-toast');
+
+    it('says "New version · Reload" when a new build is ready, and not before', async () => {
+      const { el, versions, settle } = await boot('/home', SAVED);
+      expect(toast(el)).toBeNull();
+      versions.next({ type: 'VERSION_DETECTED' }); // still downloading
+      await settle();
+      expect(toast(el)).toBeNull();
+      versions.next({ type: 'VERSION_READY' });
+      await settle();
+      expect(toast(el)?.textContent).toContain('New version');
+      expect(toast(el)?.querySelector('button')?.textContent?.trim()).toBe('Reload');
+    });
+
+    it('checks for one when the app comes back to the foreground', async () => {
+      const { el, updates, settle } = await boot('/home', SAVED);
+      expect(updates.checkForUpdate).not.toHaveBeenCalled();
+      updates.checkForUpdate.mockResolvedValue(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      await settle();
+      expect(updates.checkForUpdate).toHaveBeenCalledTimes(1);
+      expect(toast(el)?.textContent).toContain('New version');
+    });
+
+    it('does nothing where there is no service worker, or no signal', async () => {
+      const none = await boot('/home', SAVED, { worker: false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await none.settle();
+      expect(none.updates.checkForUpdate).not.toHaveBeenCalled();
+      expect(toast(none.el)).toBeNull();
+      TestBed.resetTestingModule();
+      const offline = await boot('/home', SAVED);
+      offline.updates.checkForUpdate.mockRejectedValue(new Error('offline'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      await offline.settle();
+      expect(toast(offline.el)).toBeNull();
     });
   });
 

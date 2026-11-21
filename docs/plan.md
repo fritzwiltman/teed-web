@@ -311,8 +311,7 @@ Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip
 - **Round setup:** `save_round()` creates or changes a round in one transaction: course, tees, `rounds.holes`
   (18, front or back), day and tee time, one group in playing order, and the games. Net stroke play is always on;
   the 9-point game is a `round_formats` row (`nine_point`, `{"point_value_cents": 50}`) for a group of exactly
-  three. A player with no handicap index blocks setup ("Add Dad's handicap index"); so do tees with no rating
-  and slope. `delete_round()` renumbers the rest.
+  three. Tees with no rating and slope block setup. `delete_round()` renumbers the rest.
 - **Handicaps:** course handicap = index × slope / 113 + (rating − par), unrounded; times the trip's allowance;
   rounded to the nearest stroke (a half up). Off the low man: strokes over the group's lowest. Nine holes play
   half, rounded, spread over those nine by stroke index (9-hole ratings aren't in the library). New rounds never
@@ -336,6 +335,16 @@ Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip
   online. Last write wins; conflict rules and service-worker sync are M5.
 - **Live:** `RoundsService` reads the trip's rounds once, saves them on the phone and follows `scores` and
   `rounds` over Realtime. Boards and settle-up are worked out on the phone from raw strokes; nothing is stored.
+- **Tees per player** (migration `0011`): `group_players.tee_id`, null meaning the round's tees. Each player's
+  course handicap comes from their own tees. When pars differ within the group, players on the higher par get
+  the difference added to their playing handicap, after the allowance (Rules of Handicapping 6.2b). Par,
+  stroke index and net double bogey are each player's own; "to par" on a board is against the lowest-par tees
+  in the group. The round's page shows strokes like GHIN: name over "18.7 HCI" (and the tees when they differ),
+  then CH, PH (only when it isn't simply the CH) and SO.
+- **A missing handicap index blocks scoring, not setup.** `save_round()` accepts players with no index; a score
+  can't be inserted while anyone in the group has none ("Add Dad's handicap index"), and the scorecard says so.
+- **New versions:** the app shows "New version · Reload" when the service worker has a new build ready, and
+  checks for one each time it comes back to the foreground.
 - **Left for the full milestones:** more than one group, team formats, pairing tools, presses, tee-time alerts,
   a Net / Gross switch, score-change flags on Finalize.
 - **Presses** (match formats only): off, manual, auto when closed out, auto when dormie, auto both; per bet in Nassau.

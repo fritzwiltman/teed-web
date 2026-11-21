@@ -707,6 +707,7 @@ describe('organizer area', () => {
         play_date: '2027-01-11',
         tee_time: '08:10',
         player_ids: ['me', 'dad', 'bro'],
+        player_tees: {},
         nine_point: true,
         point_value_cents: 50,
       });
@@ -735,18 +736,58 @@ describe('organizer area', () => {
       expect(t.page().querySelector('ui-choice-pills .on')?.textContent?.trim()).toBe('25¢');
     });
 
-    it('a player with no handicap index blocks the round, by name', async () => {
+    it('a player with no handicap index does not block setup (it blocks scoring)', async () => {
       const data = setup({
         roster: vi.fn(async () => [TRIO[0], player('dad', 'Dad', null), TRIO[2]]),
       });
       const t = await boot('/admin/trips/vero/rounds/new', 'organizer', data);
       await pick(t.page, 'course', 'fazio');
-      const alert = t.page().querySelector('[role=alert] a');
-      expect(alert?.textContent?.trim()).toBe("Add Dad's handicap index");
-      expect(alert?.getAttribute('href')).toBe('/admin/trips/vero/roster');
-      expect(t.page().querySelector<HTMLButtonElement>('button[type=submit]')?.disabled).toBe(true);
+      expect(t.page().querySelector('[role=alert]')).toBeNull();
+      expect(t.page().textContent).toContain('No handicap index');
       await t.submit();
-      expect(data.saveRound).not.toHaveBeenCalled();
+      expect(data.saveRound).toHaveBeenCalledWith(
+        'vero',
+        null,
+        expect.objectContaining({ player_ids: ['me', 'dad', 'bro'] }),
+      );
+    });
+
+    it('each player has a tees picker that starts on the round’s tees', async () => {
+      const data = setup();
+      const t = await boot('/admin/trips/vero/rounds/new', 'organizer', data);
+      await pick(t.page, 'course', 'palmer');
+      await pick(t.page, 'tee', 'blue');
+      const own = (id: string) =>
+        t.page().querySelector<HTMLSelectElement>(`select[name=tee-${id}]`)!;
+      expect([...t.page().querySelectorAll('select[name^=tee-]')]).toHaveLength(3);
+      expect(own('dad').closest('ui-field')?.textContent).toContain('Dad’s tees');
+      expect(own('dad').value).toBe('blue');
+      // Dad moves up to the whites; Brother is switched and then put back on the round's tees.
+      await pick(t.page, 'tee-dad', 'white');
+      await pick(t.page, 'tee-bro', 'white');
+      await pick(t.page, 'tee-bro', 'blue');
+      await t.submit();
+      expect(data.saveRound).toHaveBeenCalledWith(
+        'vero',
+        null,
+        expect.objectContaining({ tee_id: 'blue', player_tees: { dad: 'white', bro: null } }),
+      );
+    });
+
+    it('a course with one set of tees has no picker, and changing course clears own tees', async () => {
+      const data = setup();
+      const t = await boot('/admin/trips/vero/rounds/new', 'organizer', data);
+      await pick(t.page, 'course', 'palmer');
+      await pick(t.page, 'tee', 'blue');
+      await pick(t.page, 'tee-dad', 'white');
+      await pick(t.page, 'course', 'fazio');
+      expect(t.page().querySelector('select[name^=tee-]')).toBeNull();
+      await t.submit();
+      expect(data.saveRound).toHaveBeenCalledWith(
+        'vero',
+        null,
+        expect.objectContaining({ course_id: 'fazio', tee_id: 'gold', player_tees: {} }),
+      );
     });
 
     it('only offers the 9-point game to a group of exactly three', async () => {
@@ -791,6 +832,7 @@ describe('organizer area', () => {
           play_date: '2027-01-12',
           tee_time: '09:00:00',
           player_ids: ['me', 'dad', 'bro'],
+          player_tees: { me: null, dad: 'blue', bro: null },
           nine_point: true,
           point_value_cents: 100,
         })),
@@ -798,6 +840,9 @@ describe('organizer area', () => {
       const t = await boot('/admin/trips/vero/rounds/r1', 'organizer', data);
       expect(t.page().querySelector('h1')?.textContent).toBe('Round 1');
       expect(t.page().querySelector('ui-choice-pills .on')?.textContent?.trim()).toBe('$1');
+      // Dad's own tees come back picked.
+      expect(t.page().querySelector<HTMLSelectElement>('select[name=tee-dad]')?.value).toBe('blue');
+      expect(t.page().querySelector<HTMLSelectElement>('select[name=tee-me]')?.value).toBe('white');
       await t.submit();
       expect(data.saveRound).toHaveBeenCalledWith(
         'vero',

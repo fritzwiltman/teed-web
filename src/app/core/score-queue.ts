@@ -9,7 +9,7 @@ export interface PendingScore {
   strokes: number;
   /** The player picked up on this hole. */
   picked_up: boolean;
-  /** When it was entered on this phone (ms). Tells a newer entry from the one being sent. */
+  /** When it was entered on this phone (ms, never repeated). Tells a newer entry from the one being sent. */
   at: number;
 }
 
@@ -46,6 +46,7 @@ export class ScoreQueue {
   /** Called with scores the server has just confirmed, before they leave the list. */
   onSaved: ((scores: PendingScore[]) => void) | null = null;
 
+  private lastStamp = 0;
   private sending = false;
   private failures = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -75,10 +76,16 @@ export class ScoreQueue {
       hole,
       strokes,
       picked_up: pickedUp,
-      at: Date.now(),
+      at: this.stamp(),
     };
     this.save([...this.pending().filter((p) => !same(p, entry)), entry]);
     void this.flush();
+  }
+
+  /** A time that never repeats, even for two entries in the same millisecond. */
+  private stamp(): number {
+    this.lastStamp = Math.max(Date.now(), this.lastStamp + 1);
+    return this.lastStamp;
   }
 
   /** Sends what is waiting. Safe to call at any time; only one send runs at once. */
