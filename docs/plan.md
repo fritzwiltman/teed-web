@@ -168,10 +168,12 @@ Columns in other tables keep the name `player_id`: they point at a `trip_members
   (`profiles.is_admin`, set by SQL only) can do everything on every trip; **trip creators** may create trips.
   Creating a trip makes the creator its organizer.
 - **Invites:** the organizer or a co-organizer adds a person with a name and optional email, then texts an invite
-  link from their own phone (`<site>/invite/<token>`; the token is single-use and stored only as a hash). The link
-  shows "Fritz invited you to <trip>" and the email field, filled in if known. After the code is verified the
-  membership is claimed: by the token, or with no token by a matching email. One person, one membership per trip.
-  Resending makes a new link and stops the old one.
+  link from their own phone (`<site>/invite/<token>`; the token works for one person and is stored only as a
+  hash). The text reads "Fritz added you to <trip> on Teed. Tap to join: <link>". The link shows "Fritz invited
+  you to <trip>" and the email field, filled in if known. After the code is verified the membership is claimed:
+  by the token, or with no token by a matching email. The person then sees "You're in" and goes on to the trip's
+  Home. The link keeps working for the person who took it up (it says they're in); for anyone else it is used.
+  One person, one membership per trip. Resending makes a new link and stops the old one.
 - **Trip creator invite:** the app admin adds a name and phone on Trip creators and texts a link ("Fritz invited
   you to plan golf trips on Teed"); signing in from it makes that profile a trip creator.
 - **Handicap index:** the profile holds the current index; a player edits their own, and the organizer and

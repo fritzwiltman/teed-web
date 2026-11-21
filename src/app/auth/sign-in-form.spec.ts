@@ -63,8 +63,11 @@ describe('Sign-in form', () => {
     expect(el.querySelector('h1')?.textContent).toBe('Enter your code');
     expect(el.querySelector('.sent')?.textContent).toBe('Sent to von@example.com');
     expect(boxes()).toHaveLength(6);
-    expect(boxes()[0].getAttribute('autocomplete')).toBe('one-time-code');
-    expect(boxes()[0].getAttribute('inputmode')).toBe('numeric');
+    // Every box, so iOS offers the code from Mail whichever one is tapped.
+    for (const box of boxes()) {
+      expect(box.getAttribute('autocomplete')).toBe('one-time-code');
+      expect(box.getAttribute('inputmode')).toBe('numeric');
+    }
   });
 
   it('says why a code could not be sent, and stays on the email', async () => {

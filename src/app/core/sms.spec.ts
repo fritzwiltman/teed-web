@@ -13,10 +13,10 @@ import {
 describe('texting links', () => {
   it('writes the invite a player gets', () => {
     expect(inviteMessage('Fritz', 'Vero Beach 2027', 'TOKEN-1', 'https://teed.example')).toBe(
-      'Fritz invited you to Vero Beach 2027 on Teed: https://teed.example/invite/TOKEN-1',
+      'Fritz added you to Vero Beach 2027 on Teed. Tap to join: https://teed.example/invite/TOKEN-1',
     );
     expect(inviteMessage('', 'Vero Beach 2027', 'TOKEN-1', 'https://teed.example')).toBe(
-      "You're invited to Vero Beach 2027 on Teed: https://teed.example/invite/TOKEN-1",
+      "You've been added to Vero Beach 2027 on Teed. Tap to join: https://teed.example/invite/TOKEN-1",
     );
   });
 

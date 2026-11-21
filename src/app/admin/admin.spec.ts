@@ -688,7 +688,7 @@ describe('organizer area', () => {
       expect(t.api.invite).toHaveBeenCalledWith('p3');
       expect(t.texted()).toEqual({
         to: '+17725550103',
-        body: `Fritz invited you to Vero Beach 2027 on Teed: ${t.origin}/invite/TOKEN-AGAIN`,
+        body: `Fritz added you to Vero Beach 2027 on Teed. Tap to join: ${t.origin}/invite/TOKEN-AGAIN`,
       });
     });
 
@@ -697,7 +697,7 @@ describe('organizer area', () => {
       inRow(t.page(), 'Charlie', 'Text invite')!.click();
       await t.settle();
       expect(t.share).toHaveBeenCalledWith({
-        text: `Fritz invited you to Vero Beach 2027 on Teed: ${t.origin}/invite/TOKEN-AGAIN`,
+        text: `Fritz added you to Vero Beach 2027 on Teed. Tap to join: ${t.origin}/invite/TOKEN-AGAIN`,
       });
     });
 
@@ -721,7 +721,7 @@ describe('organizer area', () => {
       });
       expect(t.texted()).toEqual({
         to: '+17725550199',
-        body: `Fritz invited you to Vero Beach 2027 on Teed: ${t.origin}/invite/TOKEN-NEW`,
+        body: `Fritz added you to Vero Beach 2027 on Teed. Tap to join: ${t.origin}/invite/TOKEN-NEW`,
       });
     });
 

@@ -79,7 +79,7 @@ const VERIFY_MESSAGE: Partial<Record<VerifyOutcome, string>> = {
               inputmode="numeric"
               pattern="[0-9]*"
               maxlength="6"
-              [attr.autocomplete]="$index === 0 ? 'one-time-code' : 'off'"
+              autocomplete="one-time-code"
               [attr.aria-label]="'Digit ' + ($index + 1) + ' of 6'"
               [attr.aria-invalid]="refused() ? 'true' : null"
               [value]="digit"

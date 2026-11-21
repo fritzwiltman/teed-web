@@ -161,7 +161,8 @@ test('a friend organizes: the admin invites Brendan, who makes a trip and adds t
   const brendan = await signIn('brendan');
   assert.equal((await rpc(brendan.token, 'create_trip', tripArgs('Too soon', 'S'))).status, 403, 'not a trip creator yet');
   assert.deepEqual((await rpc(brendan.token, 'claim_invite', { p_token: creatorToken })).body, { status: 'ok', kind: 'creator' });
-  assert.equal((await fn('invite', { token: creatorToken })).status, 404, 'the invite link is single-use');
+  assert.deepEqual((await rpc(brendan.token, 'claim_invite', { p_token: creatorToken })).body, { status: 'ok', kind: 'creator' }, 'his own link, opened again');
+  assert.deepEqual((await rpc(fritz.token, 'claim_invite', { p_token: creatorToken })).body, { status: 'used' }, 'the invite link works for one person');
   assert.equal((await rpc(brendan.token, 'me')).body.is_trip_creator, true);
 
   const created = await rpc(brendan.token, 'create_trip', tripArgs(`Bandon ${run}`, 'B'));
