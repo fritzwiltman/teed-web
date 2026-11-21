@@ -198,10 +198,10 @@ describe('ui-header-band', () => {
 
   it('with an action: the pill at the top right, which reports a tap', async () => {
     const { el, host, fixture } = await render(Host);
-    host.action.set('Player view');
+    host.action.set('Alert');
     await fixture.whenStable();
     const pill = el.querySelector<HTMLButtonElement>('.action')!;
-    expect(pill.textContent).toBe('Player view');
+    expect(pill.textContent?.trim()).toBe('Alert');
     pill.click();
     expect(host.acted()).toBe(1);
   });

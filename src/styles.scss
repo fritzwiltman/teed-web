@@ -2,6 +2,10 @@
 // other piece of UI are components in app/core/ui; screens compose those and never restyle them.
 
 @use './styles/tokens';
+@use '@angular/cdk' as cdk;
+
+// The CDK's overlay container: where tooltips are drawn, above the page.
+@include cdk.overlay();
 
 @font-face {
   font-family: 'Barlow';

@@ -1,4 +1,5 @@
 import {
+  courseName,
   OpenGolfHole,
   OpenGolfTee,
   TeeDraft,
@@ -201,5 +202,17 @@ describe('refreshing a course', () => {
     expect(merged.map((t) => t.name)).toEqual(['Blue', 'White', 'White (W)', 'Red (W)', 'Gold']);
     expect(merged[0]).toMatchObject({ id: 'tee-0', slope: 125, rating: 69.4 });
     expect(merged[4].id).toBeUndefined();
+  });
+});
+
+describe('course names from OpenGolf', () => {
+  it('keeps acronyms in capitals', () => {
+    expect(courseName('Pga National Resort Palmer Course')).toBe(
+      'PGA National Resort Palmer Course',
+    );
+    expect(courseName('Tpc Sawgrass Stadium')).toBe('TPC Sawgrass Stadium');
+    expect(courseName('Forest Hills Cc')).toBe('Forest Hills CC');
+    expect(courseName('Dunes At Sandridge Golf Club')).toBe('Dunes At Sandridge Golf Club');
+    expect(courseName('Pinehurst No. Ii')).toBe('Pinehurst No. II');
   });
 });

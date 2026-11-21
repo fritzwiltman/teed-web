@@ -96,6 +96,7 @@ export class UiChoicePills<T = string> {
       background: transparent;
       color: var(--ink-2);
       font-size: 15px;
+      white-space: nowrap;
       cursor: pointer;
     }
     button.on {

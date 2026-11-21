@@ -100,7 +100,10 @@ export class UiSkeleton {
   readonly height = input<string>();
 }
 
-/** A dark bar above the tab bar with one action: "Swapped Ben and Thomas · Undo". */
+/**
+ * A dark bar above the tab bar with one action, a green pill: "Swapped Ben and Thomas · Undo",
+ * "New version · Reload".
+ */
 @Component({
   selector: 'ui-toast',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -123,9 +126,9 @@ export class UiSkeleton {
       display: flex;
       align-items: center;
       gap: var(--s3);
-      min-height: 52px;
-      padding: 0 var(--s2) 0 var(--s4);
-      border-radius: var(--radius-button);
+      min-height: 56px;
+      padding: var(--s2) var(--s2) var(--s2) var(--s4);
+      border-radius: 14px;
       background: var(--toast);
       color: var(--on-toast);
       box-shadow: var(--shadow-raised);
@@ -137,14 +140,14 @@ export class UiSkeleton {
       padding: var(--s3) 0;
     }
     button {
-      min-height: var(--tap);
-      padding: 0 var(--s3);
+      flex: none;
+      min-height: 40px;
+      padding: 0 var(--s4);
       border: 0;
-      background: none;
-      color: inherit;
+      border-radius: var(--radius-pill);
+      background: var(--band);
+      color: var(--on-band);
       font-weight: 700;
-      text-decoration: underline;
-      text-underline-offset: 3px;
       cursor: pointer;
     }
   `,

@@ -129,7 +129,7 @@ export class UiCourseCard {
 
 /** One line of the itinerary: an icon tile (filled for a round), title, time at the right, detail. */
 @Component({
-  selector: 'ui-itinerary-row',
+  selector: 'ui-itinerary-row, a[ui-itinerary-row], button[ui-itinerary-row]',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [UiIcon],
   template: `
@@ -145,14 +145,33 @@ export class UiCourseCard {
         <span class="detail">{{ detail() }}</span>
       }
     </span>
+    @if (chevron()) {
+      <ui-icon class="chevron" name="chevron-right" />
+    }
   `,
   styles: `
     :host {
       display: flex;
       align-items: center;
       gap: var(--s3);
+      width: 100%;
       min-height: 56px;
       padding: var(--s3) var(--s4);
+      border: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      text-decoration: none;
+    }
+    :host(a),
+    :host(button) {
+      cursor: pointer;
+    }
+    .chevron {
+      width: 20px;
+      height: 20px;
+      color: var(--muted);
     }
     :host(:not(:first-child)) {
       border-top: 1px solid var(--line);
@@ -208,6 +227,8 @@ export class UiItineraryRow {
   readonly time = input<string | null>();
   readonly detail = input<string | null>();
   readonly round = input(false, { transform: booleanAttribute });
+  /** In edit mode: the row opens its sheet. */
+  readonly chevron = input(false, { transform: booleanAttribute });
 }
 
 /** One line of a leaderboard. The format plug-in supplies these; the board only draws them. */
@@ -245,6 +266,9 @@ export interface BoardRow {
         {{
           title()
         }}
+        @if (note()) {
+          <span class="note">{{ note() }}</span>
+        }
       </caption>
       <thead>
         <tr>
@@ -309,6 +333,12 @@ export interface BoardRow {
       padding: var(--s3) var(--s4) var(--s1);
       text-align: left;
       font: 700 20px var(--font-heading);
+    }
+    caption .note {
+      float: right;
+      margin-top: 4px;
+      font: 500 14px var(--font-body);
+      color: var(--muted);
     }
     caption ui-live-dot {
       margin-right: 6px;
@@ -388,6 +418,8 @@ export interface BoardRow {
 })
 export class UiBoard {
   readonly title = input.required<string>();
+  /** A note at the right of the title: "90% · off the low man". */
+  readonly note = input<string>();
   readonly rows = input.required<BoardRow[]>();
   readonly valueLabel = input('Net');
   /** Column headings for a board with several values; each row then gives `cells`. */
