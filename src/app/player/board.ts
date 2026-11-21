@@ -3,6 +3,7 @@ import { RoundView, RoundsService } from '../core/rounds';
 import { SessionService } from '../core/session';
 import {
   Choice,
+  UiBadge,
   UiBoard,
   UiButton,
   UiCard,
@@ -21,7 +22,7 @@ import {
   tripBoard,
   tripNets,
 } from '../scoring';
-import { PlayerHeader } from './player-header';
+import { TripHeader } from './trip-header';
 
 /** Which board is on show: a round's id, or the whole trip. */
 type Shown = string | 'trip';
@@ -56,7 +57,8 @@ export function settleFor(
 @Component({
   selector: 'app-board',
   imports: [
-    PlayerHeader,
+    TripHeader,
+    UiBadge,
     UiBoard,
     UiButton,
     UiCard,
@@ -66,7 +68,7 @@ export function settleFor(
     UiSkeleton,
   ],
   template: `
-    <app-player-header [label]="session()?.trip?.name" title="Leaderboard" />
+    <app-trip-header title="Leaderboard" />
     <main class="content">
       @if (views().length) {
         <ui-choice-pills
@@ -77,6 +79,22 @@ export function settleFor(
         />
 
         @if (round(); as r) {
+          @if (r.result.state === 'complete') {
+            @if (sessions.canManage()) {
+              <ui-card pad aria-label="Finalize">
+                <ui-section-head title="All scores are in" />
+                <p class="detail">Check it, then make it official</p>
+                <button ui-button type="button" [busy]="finalizing()" (click)="finalize(r)">
+                  {{ finalizing() ? 'Finalizing…' : 'Finalize' }}
+                </button>
+                @if (error(); as text) {
+                  <p class="error-text" role="alert">{{ text }}</p>
+                }
+              </ui-card>
+            } @else {
+              <ui-badge stage="complete" class="status" />
+            }
+          }
           <ui-board
             [title]="title(r)"
             [columns]="table().columns"
@@ -84,17 +102,6 @@ export function settleFor(
             [rows]="table().rows"
             [live]="r.result.state === 'live'"
           />
-          @if (r.result.state === 'complete' && sessions.canManage()) {
-            <ui-card pad aria-label="Finalize">
-              <ui-section-head title="All scores are in" />
-              <button ui-button type="button" [busy]="finalizing()" (click)="finalize(r)">
-                {{ finalizing() ? 'Finalizing…' : 'Finalize Round ' + r.row.round_number }}
-              </button>
-              @if (error(); as text) {
-                <p class="error-text" role="alert">{{ text }}</p>
-              }
-            </ui-card>
-          }
         } @else {
           <ui-board
             title="Trip"
@@ -124,6 +131,11 @@ export function settleFor(
         <ui-card pad><p>No rounds yet.</p></ui-card>
       }
     </main>
+  `,
+  styles: `
+    .status {
+      align-self: flex-start;
+    }
   `,
 })
 export class Board {

@@ -22,6 +22,41 @@ export interface Trip {
   handicap_lock_date: string | null;
   /** Where the trip is played (an IANA zone): a round's day ends at midnight there. */
   timezone: string;
+  /** Each player's buy-in, in dollars. Null: no buy-in. */
+  buy_in_amount: number | null;
+}
+
+export type ItemType = 'lodging' | 'meal' | 'activity' | 'tv' | 'travel' | 'cost' | 'note';
+
+/** One line of the itinerary. The stay is the trip's `lodging` item. */
+export interface ItineraryItem {
+  id: string;
+  day: string;
+  start_time: string | null;
+  type: ItemType;
+  title: string;
+  /** Per type: { address, check_out, check_out_time, url } for the stay; { reservation, url } for a meal. */
+  details: Record<string, unknown>;
+  sort_order: number;
+}
+
+export type ItemFields = Omit<ItineraryItem, 'id'>;
+
+/** An organizer's announcement. */
+export interface TripAlert {
+  id: string;
+  level: 'announcement' | 'important' | 'urgent';
+  body: string;
+  created_at: string;
+}
+
+/** A change someone suggested to the itinerary, waiting for an organizer. */
+export interface Proposal {
+  id: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+  status: 'pending' | 'approved' | 'rejected';
+  proposer: { name: string } | null;
 }
 
 /** The fields the Trip details form edits. */
@@ -31,6 +66,7 @@ export type TripFields = Omit<Trip, 'id' | 'status'>;
 export interface CourseChoice {
   id: string;
   name: string;
+  location: string | null;
   tees: {
     id: string;
     name: string;
@@ -119,7 +155,7 @@ export interface CourseSummary {
 }
 
 const TRIP_COLUMNS =
-  'id, name, slug, location, start_date, end_date, status, theme, handicap_allowance, strokes_off_low, pickup_net_double, spectators_see_money, handicap_lock_date, timezone';
+  'id, name, slug, location, start_date, end_date, status, theme, handicap_allowance, strokes_off_low, pickup_net_double, spectators_see_money, handicap_lock_date, timezone, buy_in_amount';
 const COURSE_COLUMNS =
   'id, name, short_name, location, architect, year_opened, description, website_url, scorecard_url, directions_url, photo_path, source, source_ref, ratings_checked_at';
 const PHOTO_BUCKET = 'course-photos';
@@ -228,7 +264,7 @@ export class AdminData {
   async courseChoices(): Promise<CourseChoice[]> {
     const { data, error } = await this.db
       .from('courses')
-      .select('id, name, tees(id, name, yards, rating, slope, par)')
+      .select('id, name, location, tees(id, name, yards, rating, slope, par)')
       .order('name');
     if (error) fail(error, "Couldn't load the course library.");
     return (data as unknown as CourseChoice[])
@@ -368,6 +404,107 @@ export class AdminData {
     if (member.phone !== (current.phone ?? null)) await this.setPhone(current.id, member.phone);
     if (member.role !== current.role && current.role !== 'organizer' && member.role !== 'organizer')
       await this.setRole(current.id, member.role);
+  }
+
+  /** Ticks or unticks someone's buy-in. */
+  async setPaid(memberId: string, paid: boolean): Promise<void> {
+    const { error } = await this.db
+      .from('trip_members')
+      .update({ buy_in_paid: paid })
+      .eq('id', memberId);
+    if (error) fail(error, "Couldn't save that.");
+  }
+
+  // ── Itinerary ──────────────────────────────────────────────────────────────
+
+  async itinerary(tripId: string): Promise<ItineraryItem[]> {
+    const { data, error } = await this.db
+      .from('itinerary_items')
+      .select('id, day, start_time, type, title, details, sort_order')
+      .eq('trip_id', tripId)
+      .order('day')
+      .order('sort_order')
+      .order('start_time', { nullsFirst: false });
+    if (error) fail(error, "Couldn't load the itinerary.");
+    return data as ItineraryItem[];
+  }
+
+  /** Adds an item (no id) or changes one. */
+  async saveItem(tripId: string, id: string | null, item: ItemFields): Promise<void> {
+    const { error } = id
+      ? await this.db.from('itinerary_items').update(item).eq('id', id)
+      : await this.db.from('itinerary_items').insert({ ...item, trip_id: tripId });
+    if (error) fail(error, "Couldn't save that.");
+  }
+
+  async deleteItem(id: string): Promise<void> {
+    const { error } = await this.db.from('itinerary_items').delete().eq('id', id);
+    if (error) fail(error, "Couldn't delete that.");
+  }
+
+  /** Suggested changes waiting for an organizer, oldest first. */
+  async proposals(tripId: string): Promise<Proposal[]> {
+    const { data, error } = await this.db
+      .from('itinerary_proposals')
+      .select(
+        'id, payload, created_at, status, proposer:trip_members!itinerary_proposals_proposed_by_fkey(name)',
+      )
+      .eq('trip_id', tripId)
+      .eq('status', 'pending')
+      .order('created_at');
+    if (error) fail(error, "Couldn't load the suggested changes.");
+    return data as unknown as Proposal[];
+  }
+
+  async reviewProposal(id: string, status: 'approved' | 'rejected'): Promise<void> {
+    const { error } = await this.db
+      .from('itinerary_proposals')
+      .update({ status, reviewed_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) fail(error, "Couldn't save that.");
+  }
+
+  // ── Alerts ─────────────────────────────────────────────────────────────────
+
+  /** The trip's alerts from the last day, newest first. */
+  async alerts(tripId: string): Promise<TripAlert[]> {
+    const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+    const { data, error } = await this.db
+      .from('alerts')
+      .select('id, level, body, created_at')
+      .eq('trip_id', tripId)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false });
+    if (error) fail(error, "Couldn't load the alerts.");
+    return data as TripAlert[];
+  }
+
+  /** An organizer's message to everyone on the trip. Delivery as a push comes with M7. */
+  async sendAlert(
+    tripId: string,
+    level: 'announcement' | 'important' | 'urgent',
+    body: string,
+  ): Promise<void> {
+    const { error } = await this.db.from('alerts').insert({ trip_id: tripId, level, body });
+    if (error) fail(error, "Couldn't send the alert.");
+  }
+
+  /** Sets someone's handicap index on this trip (before the lock it is their profile's index). */
+  async setIndex(memberId: string, index: number | null): Promise<void> {
+    const { error } = await this.db.rpc('set_member_index', {
+      p_member_id: memberId,
+      p_handicap_index: index,
+    });
+    if (error) fail(error, "Couldn't save the handicap index.");
+  }
+
+  /** Hands the trip to another member; the organizer stays on as a co-organizer. */
+  async handOff(tripId: string, memberId: string): Promise<void> {
+    const { error } = await this.db.rpc('hand_off_trip', {
+      p_trip_id: tripId,
+      p_member_id: memberId,
+    });
+    if (error) fail(error, "Couldn't hand the trip off.");
   }
 
   /** Player ↔ co-organizer. The organizer only. */

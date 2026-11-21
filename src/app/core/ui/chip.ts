@@ -39,13 +39,16 @@ export class UiChip {
   readonly icon = input<IconName>();
 }
 
-export type TripStage = 'draft' | 'upcoming' | 'in-progress' | 'final';
+/** A trip's stage, and two of a round's: live (in play) and complete (all scores in, not final). */
+export type TripStage = 'draft' | 'upcoming' | 'in-progress' | 'final' | 'live' | 'complete';
 
 const STAGE_TEXT: Record<TripStage, string> = {
   draft: 'Draft',
   upcoming: 'Upcoming',
   'in-progress': 'In progress',
   final: 'Final',
+  live: 'Live',
+  complete: 'Complete',
 };
 
 /**
@@ -60,7 +63,7 @@ export function tripStage(
   return today < trip.start_date ? 'upcoming' : 'in-progress';
 }
 
-/** Draft / Upcoming / In progress / Final. */
+/** Draft amber · Upcoming neutral · In progress (and Live) green · Final dark · Complete neutral. */
 @Component({
   selector: 'ui-badge',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -83,17 +86,19 @@ export function tripStage(
       background: var(--warn-bg);
       color: var(--warn-text);
     }
-    :host(.upcoming) {
-      background: var(--tab-on);
-      color: var(--accent);
+    :host(.upcoming),
+    :host(.complete) {
+      background: var(--chip);
+      color: var(--ink-2);
     }
-    :host(.in-progress) {
+    :host(.in-progress),
+    :host(.live) {
       background: var(--fill);
       color: var(--on-fill);
     }
     :host(.final) {
-      background: var(--chip);
-      color: var(--muted);
+      background: var(--ink);
+      color: var(--bg);
     }
   `,
 })

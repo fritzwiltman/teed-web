@@ -1,6 +1,6 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { formatDay, localDate } from '../core/format';
+import { AdminData, AdminError } from '../admin/data';
+import { dayHeader, localDate } from '../core/format';
 import { RoundView, RoundsService } from '../core/rounds';
 import { ScoreQueue } from '../core/score-queue';
 import { SessionService } from '../core/session';
@@ -14,11 +14,13 @@ import {
   UiListRow,
   UiSectionHead,
   UiSheet,
+  UiIndexSheet,
   UiSkeleton,
   UiStepperRow,
+  UiSyncLine,
 } from '../core/ui';
 import { HoleResult, PlayerResult, netDoubleBogey, nextHole } from '../scoring';
-import { PlayerHeader } from './player-header';
+import { TripHeader } from './trip-header';
 
 const GAME_NAMES: Record<string, string> = { nine_point: '9-point game' };
 
@@ -45,8 +47,9 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
 @Component({
   selector: 'app-score',
   imports: [
-    RouterLink,
-    PlayerHeader,
+    TripHeader,
+    UiIndexSheet,
+    UiSyncLine,
     UiButton,
     UiCard,
     UiChoicePills,
@@ -58,12 +61,15 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
     UiStepperRow,
   ],
   template: `
-    <app-player-header [label]="label()" title="Scorecard" />
+    <app-trip-header
+      [label]="label()"
+      [title]="current() && !needsIndex() ? 'Hole ' + current()!.hole : 'Scorecard'"
+      [titleTap]="!!current() && !needsIndex()"
+      (titleTapped)="picking.set(true)"
+    />
     <main class="content">
       @if (queue.count(); as waiting) {
-        <p class="sync" role="status">
-          Syncing {{ waiting }} {{ waiting === 1 ? 'score' : 'scores' }}
-        </p>
+        <ui-sync-line>Syncing {{ waiting }} {{ waiting === 1 ? 'score' : 'scores' }}</ui-sync-line>
       }
       @if (queue.refused(); as lost) {
         <p class="error-text" role="alert">
@@ -73,9 +79,19 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
       }
 
       @if (view(); as v) {
-        @if (current(); as h) {
+        @if (needsIndex(); as name) {
+          <ui-card pad aria-label="Handicap index needed">
+            <div class="blocked">
+              <span class="mark" aria-hidden="true">!</span>
+              <p role="alert">Add {{ name }}'s handicap index</p>
+            </div>
+            @if (sessions.canManage()) {
+              <button ui-button type="button" (click)="indexOpen.set(true)">Add it</button>
+            }
+          </ui-card>
+        } @else if (current(); as h) {
           <ui-card [attr.aria-label]="'Hole ' + h.hole">
-            <ui-section-head [title]="'Hole ' + h.hole" [note]="facts(h)" />
+            <ui-section-head [title]="'Par ' + h.par" [note]="facts(h)" />
             @for (p of v.result.players; track p.id) {
               @if (editable()) {
                 <ui-stepper-row
@@ -100,17 +116,7 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
             }
           </ui-card>
 
-          @if (needsIndex(); as name) {
-            <p class="error-text" role="alert">
-              @if (sessions.canManage()) {
-                <a [routerLink]="['/admin/trips', session()?.trip?.id, 'roster']"
-                  >Add {{ name }}'s handicap index</a
-                >
-              } @else {
-                Add {{ name }}'s handicap index
-              }
-            </p>
-          } @else if (closed(); as why) {
+          @if (closed(); as why) {
             <p class="center">{{ why }}</p>
           }
           <div class="pair">
@@ -176,6 +182,13 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
             }
           }
         </ui-sheet>
+        <ui-index-sheet
+          [(open)]="indexOpen"
+          [name]="needsIndex() ?? ''"
+          [busy]="savingIndex()"
+          [error]="indexError()"
+          (saved)="saveIndex($event)"
+        />
       } @else if (loading()) {
         <ui-skeleton shape="block" height="320px" />
       } @else {
@@ -184,11 +197,24 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
     </main>
   `,
   styles: `
-    .sync {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--muted);
-      text-align: center;
+    .blocked {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .mark {
+      flex: none;
+      display: inline-grid;
+      place-items: center;
+      width: 20px;
+      height: 20px;
+      border: 1.5px solid var(--warn-edge);
+      border-radius: 50%;
+      background: var(--warn-bg);
+      color: var(--warn-edge);
+      font: 800 13px/1 var(--font-body);
     }
   `,
 })
@@ -221,14 +247,8 @@ export class Score {
   /** "Round 2 · Fri, Nov 27 · Fazio" */
   protected readonly label = computed(() => {
     const v = this.view();
-    if (!v) return this.session()?.trip.name ?? '';
-    return [
-      `Round ${v.row.round_number}`,
-      formatDay(v.row.play_date),
-      v.row.courses?.short_name || v.row.courses?.name,
-    ]
-      .filter(Boolean)
-      .join(' · ');
+    if (!v) return undefined; // the trip line
+    return dayHeader(`Round ${v.row.round_number}`, v.row.play_date);
   });
 
   /** I may enter scores: scoring is open, and I'm in the group or run the trip. */
@@ -247,6 +267,11 @@ export class Score {
   protected readonly needsIndex = computed(
     () => this.view()?.result.players.find((p) => p.playing === null)?.name ?? null,
   );
+  /** "Add it": the index sheet, in place. */
+  protected readonly indexOpen = signal(false);
+  protected readonly savingIndex = signal(false);
+  protected readonly indexError = signal<string | null>(null);
+  private readonly data = inject(AdminData);
 
   /** Why nobody can score, when that needs saying. */
   protected readonly closed = computed<string | null>(() => {
@@ -321,9 +346,32 @@ export class Score {
   }
 
   /** "Par 4 · SI 5 · 412 yds" */
+  /** Saves the missing index; the round reloads and scoring can start. */
+  protected async saveIndex(index: number | null): Promise<void> {
+    const v = this.view();
+    const player = v?.result.players.find((p) => p.playing === null);
+    const tripId = this.session()?.trip.id;
+    if (!player || !tripId) return;
+    this.savingIndex.set(true);
+    this.indexError.set(null);
+    try {
+      await this.data.setIndex(player.id, index);
+      await this.rounds.load(tripId);
+      this.indexOpen.set(false);
+    } catch (e) {
+      this.indexError.set(
+        e instanceof AdminError ? e.message : "Couldn't save the handicap index.",
+      );
+    } finally {
+      this.savingIndex.set(false);
+    }
+  }
+
+  /** "Blue tees · SI 5 · 412 yds" */
   protected facts(h: HoleResult): string {
     const yards = this.view()?.row.tees?.hole_yards?.[h.hole - 1];
-    return [`Par ${h.par}`, `SI ${h.strokeIndex}`, yards ? `${yards} yds` : '']
+    const tees = this.view()?.row.tees?.name;
+    return [tees ? `${tees} tees` : '', `SI ${h.strokeIndex}`, yards ? `${yards} yds` : '']
       .filter(Boolean)
       .join(' · ');
   }

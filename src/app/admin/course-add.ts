@@ -9,7 +9,7 @@ import { OPENGOLF_CREDIT, OpenGolfSearchHit, fetchOpenGolf, searchOpenGolf } fro
   selector: 'app-course-add',
   imports: [UiButton, UiCard, UiField, UiHeaderBand, UiListRow],
   template: `
-    <ui-header-band title="Add a course" back="/admin/courses" backLabel="Course library" />
+    <ui-header-band title="Add a course" back="/courses" backLabel="Course library" />
     <main class="content">
       <form class="stack" (submit)="search($event)" novalidate>
         <ui-field label="Course name">
@@ -91,13 +91,13 @@ export class CourseAdd {
     await this.work("Couldn't load that course from OpenGolf. Try again in a moment.", async () => {
       const { draft, gaps } = await fetchOpenGolf(hit.id);
       this.store.put(draft, gaps);
-      await this.router.navigateByUrl('/admin/courses/new');
+      await this.router.navigateByUrl('/courses/new');
     });
   }
 
   protected async byHand(): Promise<void> {
     this.store.put(blankCourse(), { par: false, strokeIndex: false });
-    await this.router.navigateByUrl('/admin/courses/new');
+    await this.router.navigateByUrl('/courses/new');
   }
 
   private async work(failure: string, task: () => Promise<void>): Promise<void> {

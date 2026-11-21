@@ -67,3 +67,43 @@ const FORMAT_NAMES: Record<string, string> = {
 export function formatName(key: string): string {
   return FORMAT_NAMES[key] ?? key;
 }
+
+/** 'Oct 8–12' or 'Sep 30 – Oct 3': a trip's dates without the year. */
+export function formatShortRange(start: string, end: string): string {
+  const monthDay = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+  const a = utc(start);
+  const b = utc(end);
+  if (start === end) return monthDay.format(a);
+  if (a.getUTCMonth() === b.getUTCMonth()) return `${monthDay.format(a)}–${b.getUTCDate()}`;
+  return `${monthDay.format(a)} – ${monthDay.format(b)}`;
+}
+
+/** The trip line in a trip's header: 'Southern Pines · Oct 8–12' (a trailing year is dropped). */
+export function tripLine(trip: { name: string; start_date: string; end_date: string }): string {
+  const name = trip.name.replace(/\s+'?\d{2,4}$/, '').trim() || trip.name;
+  return `${name} · ${formatShortRange(trip.start_date, trip.end_date)}`;
+}
+
+/** A day header: 'Round 3 · Sun, Oct 11', 'Travel day · Thu, Oct 8'. */
+export function dayHeader(label: string, date: string): string {
+  return `${label} · ${formatDay(date)}`;
+}
+
+/** Whole days from today to a date ('YYYY-MM-DD'), never below 0. */
+export function daysUntil(date: string, today = localDate()): number {
+  return Math.max(0, Math.round((utc(date).getTime() - utc(today).getTime()) / 86_400_000));
+}
+
+/**
+ * What a round is played as, for a round card: its side games ("9-point game"), or "Net stroke
+ * play" when there are none. Net stroke play is always on the board, so it isn't listed beside
+ * a side game.
+ */
+export function gameLine(formatKeys: string[]): string {
+  const side = formatKeys.filter((key) => key !== 'stroke');
+  return (side.length ? side : formatKeys.length ? ['stroke'] : []).map(formatName).join(' + ');
+}

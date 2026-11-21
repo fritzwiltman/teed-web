@@ -7,6 +7,7 @@ import {
   UiField,
   UiHeaderBand,
   UiListRow,
+  UiSectionHead,
   UiSheet,
   UiSkeleton,
 } from '../core/ui';
@@ -18,15 +19,16 @@ import { AdminData, AdminError, TripCreator } from './data';
  */
 @Component({
   selector: 'app-creators',
-  imports: [UiButton, UiCard, UiField, UiHeaderBand, UiListRow, UiSheet, UiSkeleton],
+  imports: [UiButton, UiCard, UiField, UiHeaderBand, UiListRow, UiSectionHead, UiSheet, UiSkeleton],
   template: `
-    <ui-header-band title="Trip creators" back="/you" backLabel="You" />
+    <ui-header-band title="Trip creators" back="/you" [backLabel]="me()?.display_name || 'You'" />
     <main class="content">
       @if (error(); as text) {
         <p class="error-text" role="alert">{{ text }}</p>
       }
       @if (creators(); as list) {
         <ui-card aria-label="Trip creators">
+          <ui-section-head title="Trip creators" [note]="'' + list.length" />
           @for (c of list; track c.id) {
             <ui-list-row [title]="c.name" [detail]="detail(c)">
               @if (!c.claimed_at) {
@@ -87,7 +89,7 @@ import { AdminData, AdminError, TripCreator } from './data';
 })
 export class Creators {
   private readonly data = inject(AdminData);
-  private readonly me = inject(AuthService).me;
+  protected readonly me = inject(AuthService).me;
 
   protected readonly creators = signal<TripCreator[] | null>(null);
   protected readonly error = signal<string | null>(null);

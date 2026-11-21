@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { SwUpdate } from '@angular/service-worker';
 import { Subject } from 'rxjs';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
+import { AdminData } from './admin/data';
 import { App } from './app';
 import { routes } from './app.routes';
 import { AuthService, Me } from './core/auth';
@@ -68,6 +69,8 @@ interface Options {
   syncing?: number;
   /** The service worker: false for a browser without one. */
   worker?: boolean;
+  /** What the organizer data layer answers, where a test needs more than the defaults. */
+  dataOverrides?: Partial<Record<keyof AdminData, unknown>>;
 }
 
 /** Boots the app at a URL, signed in (or not) with the given open trip, and returns the page. */
@@ -200,6 +203,31 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     checkForUpdate: vi.fn(async () => false),
     activateUpdate: vi.fn(async () => true),
   };
+  // The organizer data layer (People, Info, Itinerary, a round's setup, alerts).
+  const role = saved?.player.role ?? 'player';
+  const data = {
+    tripRole: vi.fn(async () => role),
+    trip: vi.fn(async () => ({
+      ...saved?.trip,
+      handicap_allowance: 1,
+      strokes_off_low: true,
+      pickup_net_double: true,
+      buy_in_amount: null,
+    })),
+    roster: vi.fn(async () => []),
+    rounds: vi.fn(async () => []),
+    itinerary: vi.fn(async () => []),
+    proposals: vi.fn(async () => []),
+    alerts: vi.fn(async () => []),
+    sendAlert: vi.fn(async () => {}),
+    updateTrip: vi.fn(async () => ({})),
+    setIndex: vi.fn(async () => {}),
+    spectatorToken: vi.fn(async () => null),
+    courseChoices: vi.fn(async () => []),
+    lastPointValue: vi.fn(async () => null),
+    roundSetup: vi.fn(),
+    ...options.dataOverrides,
+  };
   const promptInstall = vi.fn(async () => {});
   const share = vi.fn(async (_data: { text: string }) => {});
   Object.defineProperty(navigator, 'share', { configurable: true, value: share });
@@ -214,6 +242,7 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
       { provide: RoundsService, useValue: rounds },
       { provide: ScoreQueue, useValue: queue },
       { provide: SwUpdate, useValue: updates },
+      { provide: AdminData, useValue: data },
       {
         provide: InstallService,
         useValue: {
@@ -279,6 +308,7 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     updates,
     versions,
     queue,
+    data,
     el,
     click,
     type,
@@ -303,7 +333,7 @@ describe('App', () => {
       for (const url of ['/', '/home', '/you', '/install', '/admin/trips/t1']) {
         const { router, el } = await boot(url, null, { me: null });
         expect(router.url, url).toBe('/login');
-        expect(el.querySelector('.wordmark')?.textContent).toBe('teed');
+        expect(el.querySelector('ui-logo')).toBeTruthy();
         expect(el.querySelector('h1')?.textContent).toBe('Sign in');
         expect(el.querySelector('ui-tab-bar')).toBeNull();
         TestBed.resetTestingModule();
@@ -334,8 +364,8 @@ describe('App', () => {
       const { router, el, sessions, auth } = await boot('/', null, { trips: [mine({})] });
       expect(router.url).toBe('/home');
       expect(el.querySelector('h1')?.textContent).toContain('Southern Pines 2026');
-      expect(el.querySelector('ui-header-band .label')?.textContent).toBe(
-        'Southern Pines, NC · Oct 8–12, 2026',
+      expect(el.querySelector('ui-header-band .label')?.textContent?.trim()).toBe(
+        'Southern Pines · Oct 8–12',
       );
       expect(auth.ready).toHaveBeenCalled();
       expect(sessions.revalidate).toHaveBeenCalled();
@@ -394,33 +424,60 @@ describe('App', () => {
       }),
     ];
 
-    it('lists my trips as next, upcoming and past, with dates, player count and where they stand', async () => {
-      const { el } = await boot('/you', null, { trips: TRIPS });
-      expect(rows(el, 'Next')).toEqual(['Vero Beach 2027']);
-      expect(rows(el, 'Upcoming')).toEqual(['Myrtle Beach 2027', 'Bandon 2027']);
-      expect(rows(el, 'Past')).toEqual(['Southern Pines 2026']);
-      expect(el.querySelector('[aria-label=Upcoming]')?.textContent).toContain(
-        'May 13–16, 2027 · 8 players',
+    const trips = (el: HTMLElement) => el.querySelector('[aria-label=Trips]')!;
+    const group = (el: HTMLElement, name: string) => {
+      const label = [...trips(el).querySelectorAll('.group')].find(
+        (g) => g.textContent?.trim() === name,
       );
-      expect([...el.querySelectorAll('ui-badge')].map((b) => b.textContent?.trim())).toEqual([
-        'Upcoming',
-        'Upcoming',
-        'Draft',
-        'Final',
+      const out: string[] = [];
+      for (
+        let n = label?.nextElementSibling;
+        n && !n.classList.contains('group');
+        n = n.nextElementSibling
+      )
+        out.push(n.querySelector('.title')?.textContent?.trim() ?? '');
+      return out;
+    };
+
+    it('has the name beside the logo, and one Trips card: Next big with its countdown, then Upcoming and Past', async () => {
+      const { el } = await boot('/you', null, { trips: TRIPS });
+      expect(el.querySelector('header h1')?.textContent).toBe('Fritz');
+      expect(el.querySelector('header ui-logo')).toBeTruthy();
+      const next = trips(el).querySelector('.next')!;
+      expect(next.querySelector('h2')?.textContent).toBe('Vero Beach 2027');
+      expect(next.querySelector('.facts')?.textContent?.trim()).toBe('Jan 11–15 · 4 players');
+      expect(next.querySelector('.days')?.textContent).toMatch(/^\d+$/);
+      expect([...next.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual([
+        'Open trip',
       ]);
+      expect(group(el, 'Upcoming')).toEqual(['Myrtle Beach 2027', 'Bandon 2027']);
+      expect(group(el, 'Past')).toEqual(['Southern Pines 2026']);
+      expect([...trips(el).querySelectorAll('ui-badge')].map((b) => b.textContent?.trim())).toEqual(
+        ['Draft', 'Final'],
+      );
       expect(el.querySelector('ui-tab-bar')).toBeNull();
     });
 
-    it("shows a past trip's finish and winnings once there are any", async () => {
+    it("shows a past trip's dates, and its finish and winnings once there are any", async () => {
       const { el } = await boot('/you', null, {
         trips: [mine({ bucket: 'past', stage: 'final', finish: '1st', winnings: 190 })],
       });
-      expect(el.querySelector('[aria-label=Past]')?.textContent).toContain(
-        'Oct 8–12, 2026 · 1st · $190',
+      expect(trips(el).textContent).toContain('Oct 8–12 · 1st · $190');
+    });
+
+    it('a first-time player sees Next and Your golf only; on no trip, "No trips yet"', async () => {
+      const first = await boot('/you', null, { trips: [TRIPS[0]] });
+      expect(first.el.querySelectorAll('ui-card').length).toBe(2);
+      expect(first.el.querySelector('.fab')).toBeNull();
+      TestBed.resetTestingModule();
+      const none = await boot('/you', null, { trips: [] });
+      expect(trips(none.el).textContent).toContain('No trips yet');
+      expect(trips(none.el).textContent).toContain(
+        'When an organizer adds you, the trip shows up here.',
       );
     });
 
-    it('opens a published trip at its Home, and a draft where it is set up', async () => {
+    it('opens every trip at its Home, a draft too', async () => {
       const published = await boot('/you', null, { trips: TRIPS });
       await published.click('Myrtle Beach 2027');
       expect(published.sessions.open).toHaveBeenCalledWith('t2');
@@ -428,9 +485,8 @@ describe('App', () => {
       TestBed.resetTestingModule();
       const draft = await boot('/you', null, { trips: TRIPS });
       await draft.click('Bandon 2027');
-      expect(draft.sessions.open).not.toHaveBeenCalled();
-      // The organizer screens ask the database whether this person runs the trip.
-      expect(draft.rpc).toHaveBeenCalledWith('trip_role', { p_trip_id: 't3' });
+      expect(draft.sessions.open).toHaveBeenCalledWith('t3');
+      expect(draft.router.url).toBe('/home');
     });
 
     it('closes any trip left open', async () => {
@@ -438,40 +494,40 @@ describe('App', () => {
       expect(sessions.leave).toHaveBeenCalled();
     });
 
-    it('edits my own name and handicap index', async () => {
-      const { el, type, click, auth } = await boot('/you', null);
-      expect(el.querySelector<HTMLInputElement>('input[name=name]')?.value).toBe('Fritz');
+    it('Your golf: the handicap index row opens a sheet to change it; email is shown', async () => {
+      const { el, click, auth, settle } = await boot('/you', null);
       expect(el.querySelector('[aria-label="Your golf"]')?.textContent).toContain(
         'fritz@example.com',
       );
-      await type('index', '17.24');
-      await click('Save');
+      await click('Handicap index');
+      const sheet = el.querySelector('[role=dialog]')!;
+      expect(sheet.querySelector('h2')?.textContent).toBe('Your handicap index');
+      const input = sheet.querySelector<HTMLInputElement>('input[name=index]')!;
+      expect(input.value).toBe('18.6');
+      input.value = '17.24';
+      input.dispatchEvent(new Event('input'));
+      sheet.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle();
       expect(auth.saveProfile).toHaveBeenCalledWith({
         display_name: 'Fritz',
         handicap_index: 17.2,
       });
-      await type('index', '99');
-      await click('Save');
-      expect(el.querySelector('[role=alert]')?.textContent).toContain('up to 54.0');
-      expect(auth.saveProfile).toHaveBeenCalledTimes(1);
     });
 
-    it('offers New trip and the course library only to trip creators, and the admin lists only to the app admin', async () => {
+    it('gives trip creators "+ New trip" floating; the admin also gets Trip creators', async () => {
       const plain = await boot('/you', null);
-      expect(plain.el.querySelector('[aria-label=Organize]')).toBeNull();
+      expect(plain.el.querySelector('.fab')).toBeNull();
+      expect(plain.el.querySelector('[aria-label=Admin]')).toBeNull();
       TestBed.resetTestingModule();
       const creator = await boot('/you', null, { me: { ...FRITZ, is_trip_creator: true } });
-      expect(rows(creator.el, 'Organize')).toEqual(['New trip', 'Course library']);
+      expect(creator.el.querySelector('.fab')?.textContent?.trim()).toBe('+ New trip');
+      expect(creator.el.querySelector('.fab')?.getAttribute('href')).toBe('/you/new-trip');
+      expect(creator.el.querySelector('[aria-label=Admin]')).toBeNull();
       TestBed.resetTestingModule();
       const admin = await boot('/you', null, {
         me: { ...FRITZ, is_trip_creator: true, is_admin: true },
       });
-      expect(rows(admin.el, 'Organize')).toEqual([
-        'New trip',
-        'Course library',
-        'All trips',
-        'Trip creators',
-      ]);
+      expect(rows(admin.el, 'Admin')).toEqual(['Trip creators']);
     });
 
     it('signs out to Sign in', async () => {
@@ -493,23 +549,87 @@ describe('App', () => {
     });
   });
 
-  describe('Manage pill', () => {
-    it('is there for the organizer and co-organizers, on every trip screen, and goes to the organizer screens', async () => {
+  describe('trip header', () => {
+    it('has no Manage toggle anywhere: organizers get Alert on Home, players nothing', async () => {
       for (const who of [ORGANIZER, CO_ORGANIZER]) {
         const { el, router, fixture } = await boot('/home', who);
-        expect(pill(el)?.textContent).toBe('Manage');
-        expect(pill(el)?.getAttribute('href')).toBe('/admin/trips/t1');
+        expect(pill(el)?.textContent?.trim()).toBe('Alert');
         for (const url of ['/score', '/board', '/trip']) {
           await router.navigateByUrl(url);
           await fixture.whenStable();
-          expect(pill(el)?.textContent, url).toBe('Manage');
+          expect(pill(el), url).toBeNull();
         }
+        TestBed.resetTestingModule();
+      }
+      expect(pill((await boot('/home', SAVED)).el)).toBeNull();
+    });
+
+    it('Alert opens the composer and sends to everyone', async () => {
+      const { el, click, data, settle } = await boot('/home', ORGANIZER);
+      await click('Alert');
+      const sheet = el.querySelector('[role=dialog]')!;
+      expect(sheet.querySelector('h2')?.textContent).toBe('Alert everyone');
+      const box = sheet.querySelector<HTMLTextAreaElement>('textarea')!;
+      box.value = 'Breakfast ends at 9:30.';
+      box.dispatchEvent(new Event('input'));
+      await settle();
+      [...sheet.querySelectorAll<HTMLButtonElement>('ui-segmented button')]
+        .find((b) => b.textContent?.trim() === 'Important')!
+        .click();
+      sheet.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle();
+      expect(data.sendAlert).toHaveBeenCalledWith('t1', 'important', 'Breakfast ends at 9:30.');
+    });
+
+    it('the trip line opens the switcher, on every trip screen: You, then current and upcoming trips', async () => {
+      const trips = [
+        mine({}),
+        mine({
+          id: 't2',
+          name: 'Vero Beach 2027',
+          stage: 'upcoming',
+          bucket: 'upcoming',
+          start_date: '2027-01-14',
+          end_date: '2027-01-17',
+        }),
+        mine({ id: 't3', name: 'Old trip', stage: 'final', bucket: 'past' }),
+      ];
+      for (const url of ['/home', '/score', '/board', '/trip/itinerary']) {
+        const { el, settle } = await boot(url, SAVED, { trips });
+        const line = el.querySelector<HTMLButtonElement>('ui-header-band .switch')!;
+        expect(line.textContent?.trim(), url).toBe('Southern Pines · Oct 8–12');
+        expect(line.querySelector('ui-icon')).toBeTruthy();
+        line.click();
+        await settle();
+        const sheet = el.querySelector('[role=dialog]')!;
+        expect(
+          [...sheet.querySelectorAll('.row .title')].map((t) => t.textContent?.trim()),
+        ).toEqual(['Fritz', 'Southern Pines 2026', 'Vero Beach 2027']);
+        expect(sheet.querySelector('.initial')?.textContent?.trim()).toBe('F');
+        expect(sheet.querySelector('.row[aria-current=true] .title')?.textContent?.trim()).toBe(
+          'Southern Pines 2026',
+        );
         TestBed.resetTestingModule();
       }
     });
 
-    it('is not there for a player', async () => {
-      expect(pill((await boot('/home', SAVED)).el)).toBeNull();
+    it('goes from a trip to You and back in two taps', async () => {
+      const trips = [
+        mine({}),
+        mine({ id: 't2', name: 'Vero Beach 2027', stage: 'upcoming', bucket: 'upcoming' }),
+      ];
+      const { el, settle, router, sessions } = await boot('/home', SAVED, { trips });
+      el.querySelector<HTMLButtonElement>('ui-header-band .switch')!.click();
+      await settle();
+      [...el.querySelectorAll<HTMLButtonElement>('[role=dialog] .row')][0].click();
+      await settle();
+      expect(sessions.leave).toHaveBeenCalled();
+      expect(router.url).toBe('/you');
+      [...el.querySelectorAll<HTMLButtonElement>('button')]
+        .find((b) => b.textContent?.trim() === 'Open trip')!
+        .click();
+      await settle();
+      expect(router.url).toBe('/home');
     });
   });
 
@@ -628,49 +748,32 @@ describe('App', () => {
     });
   });
 
-  describe('role', () => {
-    const role = (el: HTMLElement) =>
-      el.querySelector('[aria-label=You] ui-chip')?.textContent?.trim() ?? null;
-
-    it('is absent for a player', async () => {
-      expect(role((await boot('/home', SAVED)).el)).toBeNull();
-    });
-
-    it('says Organizer or Co-organizer for the people who run the trip', async () => {
-      expect(role((await boot('/home', ORGANIZER)).el)).toBe('Organizer');
-      TestBed.resetTestingModule();
-      expect(role((await boot('/home', CO_ORGANIZER)).el)).toBe('Co-organizer');
-    });
-  });
-
   describe('Trip', () => {
-    it('goes back to You', async () => {
-      const { click, sessions, router } = await boot('/trip', SAVED);
-      await click('All my trips');
-      expect(sessions.leave).toHaveBeenCalled();
-      expect(router.url).toBe('/you');
+    it('is "Trip overview" with Itinerary · Courses · People · Info', async () => {
+      const { el, router } = await boot('/trip', SAVED);
+      expect(router.url).toBe('/trip/itinerary');
+      expect(el.querySelector('h1')?.textContent).toBe('Trip overview');
+      expect(
+        [...el.querySelectorAll('main > ui-segmented button')].map((b) => b.textContent?.trim()),
+      ).toEqual(['Itinerary', 'Courses', 'People', 'Info']);
+      expect(el.querySelector('main > ui-segmented button.on')?.textContent?.trim()).toBe(
+        'Itinerary',
+      );
     });
 
-    it('lets anyone on the trip share the spectator link', async () => {
-      const { click, invoke, share } = await boot('/trip', SAVED, {
-        functions: { 'spectator-link': { token: 'SPEC-TOKEN' } },
+    it('lets anyone on the trip share the spectator link from People', async () => {
+      const { click, share } = await boot('/trip/people', SAVED, {
+        dataOverrides: { spectatorToken: vi.fn(async () => 'SPEC-TOKEN') },
       });
-      await click('Share the spectator link');
-      expect(invoke).toHaveBeenCalledWith('spectator-link', {
-        body: { trip_id: 't1', action: 'get' },
-      });
+      await click('Share');
       expect(share).toHaveBeenCalledWith({
         text: `Follow Southern Pines 2026. Tap to open Teed: ${location.origin}/watch/SPEC-TOKEN`,
       });
     });
 
-    it('says so when the organizer has not made a link yet', async () => {
-      const { click, share, el } = await boot('/trip', SAVED, {
-        functions: { 'spectator-link': { token: null } },
-      });
-      await click('Share the spectator link');
-      expect(share).not.toHaveBeenCalled();
-      expect(el.querySelector('[aria-label=Spectators]')?.textContent).toContain('No link yet');
+    it('has no spectator card for a player while there is no link', async () => {
+      const { el } = await boot('/trip/people', SAVED);
+      expect(el.querySelector('[aria-label=Spectators]')).toBeNull();
     });
   });
 
@@ -723,7 +826,12 @@ describe('App', () => {
       });
       expect(el.querySelector('ui-header-band .label')?.textContent).toContain('Round 1');
       expect(el.querySelector('[aria-label="Hole 2"]')).toBeTruthy();
-      expect(el.textContent).toContain('Par 4 · SI 2');
+      expect(el.querySelector('h1')?.textContent?.trim()).toBe('Hole 2');
+      expect(el.querySelector('ui-header-band .switch')?.textContent?.trim()).toMatch(
+        /^Round 1 · \w{3}, \w{3} \d+$/,
+      );
+      expect(el.querySelector('[aria-label="Hole 2"] h2')?.textContent).toBe('Par 4');
+      expect(el.querySelector('[aria-label="Hole 2"] .note')?.textContent).toBe('Blue tees · SI 2');
       expect([...el.querySelectorAll('ui-stepper-row .name')].map((n) => n.textContent)).toEqual([
         'Fritz',
         'Dad',
@@ -890,13 +998,19 @@ describe('App', () => {
         ),
       ).toBe(false);
       TestBed.resetTestingModule();
-      // The organizer gets the way to People.
+      // The organizer adds it in place, from the same card.
       const organizer: TripSession = { ...ME, player: { ...ME.player, role: 'organizer' } };
-      const { el } = await boot('/score', organizer, { live: [row] });
-      expect(el.querySelector('[role=alert] a')?.getAttribute('href')).toBe(
-        '/admin/trips/t1/roster',
-      );
+      const { el, click, data, settle } = await boot('/score', organizer, { live: [row] });
       expect(el.querySelector('ui-stepper-row')).toBeNull();
+      await click('Add it');
+      const sheet = el.querySelector('[role=dialog]')!;
+      expect(sheet.querySelector('h2')?.textContent).toBe("Dad's handicap index");
+      const input = sheet.querySelector<HTMLInputElement>('input[name=index]')!;
+      input.value = '22';
+      input.dispatchEvent(new Event('input'));
+      sheet.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle();
+      expect(data.setIndex).toHaveBeenCalledWith('dad', 22);
     });
 
     it('with mixed tees, each row starts at that player’s own par', async () => {
@@ -974,7 +1088,7 @@ describe('App', () => {
       expect(el.querySelector('[aria-label="Settle up"] .note')?.textContent).toContain(
         'If it ended now',
       );
-      await click('Finalize Round 1');
+      await click('Finalize');
       expect(finalize).toHaveBeenCalledWith('r1');
       expect(el.querySelector('[aria-label=Finalize]')).toBeNull();
       expect(el.querySelector('[aria-label="Settle up"] .note')?.textContent).toContain(
@@ -1062,7 +1176,7 @@ describe('App', () => {
 
   describe('a round’s page', () => {
     it('shows the setup and the strokes to everyone; only organizers get Edit', async () => {
-      const { el } = await boot('/rounds/r1', ME, { live: [playing()] });
+      const { el } = await boot('/trip/rounds/r1', ME, { live: [playing()] });
       const setup = el.querySelector('[aria-label="Round setup"]')!;
       expect(setup.textContent).toContain('PGA National Palmer');
       expect(setup.textContent).toContain('Blue · 6,412 yds · par 72');
@@ -1077,21 +1191,17 @@ describe('App', () => {
         ['Dad', '20.0 HCI', '20', '10'],
         ['Brother', '10.0 HCI', '10', '0'],
       ]);
-      expect(
-        [...el.querySelectorAll('a')].some((a) => a.textContent?.trim() === 'Edit round'),
-      ).toBe(false);
+      expect(el.querySelector('button[ui-edit-pill]')).toBeNull();
       TestBed.resetTestingModule();
       const organizer: TripSession = { ...ME, player: { ...ME.player, role: 'organizer' } };
-      const edit = (await boot('/rounds/r1', organizer, { live: [playing()] })).el;
+      const edit = (await boot('/trip/rounds/r1', organizer, { live: [playing()] })).el;
       expect(
-        [...edit.querySelectorAll('a')]
-          .find((a) => a.textContent?.trim() === 'Edit round')
-          ?.getAttribute('href'),
-      ).toBe('/admin/trips/t1/rounds/r1');
+        edit.querySelector('[aria-label="Round setup"] button[ui-edit-pill]')?.textContent?.trim(),
+      ).toBe('Edit');
     });
 
     it('shows PH when the allowance is not 100%', async () => {
-      const { el } = await boot('/rounds/r1', ME, {
+      const { el } = await boot('/trip/rounds/r1', ME, {
         live: [playing()],
         rules: { handicap_allowance: 0.9 },
       });
@@ -1118,7 +1228,7 @@ describe('App', () => {
         stroke_index: row.tees!.stroke_index,
       };
       for (const gp of row.groups[0].group_players) if (gp.player?.id !== 'dad') gp.tee = gold;
-      const { el } = await boot('/rounds/r1', ME, { live: [row] });
+      const { el } = await boot('/trip/rounds/r1', ME, { live: [row] });
       const strokes = el.querySelector('ui-board[aria-label=Strokes]')!;
       expect(heads(strokes)).toEqual(['Player', 'CH', 'PH', 'SO']);
       // 10 + (69 − 71) = 8. Dad: 20, plus 1 for the higher par = 21; 13 off the low man.
@@ -1133,7 +1243,7 @@ describe('App', () => {
       const row = playing();
       row.groups[0].group_players.find((gp) => gp.player?.id === 'dad')!.player!.handicap_index =
         null;
-      const { el } = await boot('/rounds/r1', ME, { live: [row] });
+      const { el } = await boot('/trip/rounds/r1', ME, { live: [row] });
       expect(sheet(el.querySelector('ui-board[aria-label=Strokes]')!)[1]).toEqual([
         'Dad',
         'No handicap index',
@@ -1145,7 +1255,7 @@ describe('App', () => {
     it('shows the scores, a pickup marked "PU"', async () => {
       const row = playing({ me: [4, 5], dad: [6, 7], bro: [4] });
       row.groups[0].group_players.find((gp) => gp.player?.id === 'dad')!.scores[1].picked_up = true;
-      const { el } = await boot('/rounds/r1', ME, { live: [row] });
+      const { el } = await boot('/trip/rounds/r1', ME, { live: [row] });
       expect([...el.querySelectorAll('[aria-label=Scores] ui-list-row')].map(rowText)).toEqual([
         'Fritz 4 · 5 9',
         'Dad 6 · 7 PU 13',
@@ -1153,10 +1263,20 @@ describe('App', () => {
       ]);
     });
 
-    it('the Trip tab lists the rounds', async () => {
-      const { el } = await boot('/trip', ME, { live: [playing({}, { play_date: '2026-11-26' })] });
-      expect(rows(el, 'Rounds')).toEqual(['R1 · Palmer']);
-      expect(el.querySelector('[aria-label=Rounds] a')?.getAttribute('href')).toBe('/rounds/r1');
+    it('Trip › Courses lists the rounds, each to its own page', async () => {
+      const { el } = await boot('/trip/courses', ME, {
+        live: [playing({}, { play_date: '2026-11-26' })],
+      });
+      const link = el.querySelector('a[ui-list-row]')!;
+      expect(link.querySelector('.title')?.textContent?.trim()).toBe(
+        'PGA National Palmer',
+      );
+      expect(link.getAttribute('href')).toBe('/trip/rounds/r1');
+    });
+
+    it('the old /rounds/:id address still opens the round', async () => {
+      const { router } = await boot('/rounds/r1', ME, { live: [playing()] });
+      expect(router.url).toBe('/trip/rounds/r1');
     });
   });
 
@@ -1315,7 +1435,7 @@ describe('App', () => {
       await signIn('brendan@example.com');
       expect(auth.refresh).toHaveBeenCalled();
       expect(router.url).toBe('/you');
-      expect(rows(el, 'Organize')).toEqual(['New trip', 'Course library']);
+      expect(el.querySelector('.fab')?.textContent?.trim()).toBe('+ New trip');
     });
 
     it('lets someone already signed in take it up in one tap', async () => {
@@ -1479,14 +1599,18 @@ describe('App', () => {
       ],
     };
 
-    it('needs no account and shows just the golf: the round on now and the list of rounds, with no tabs', async () => {
+    it('needs no account and shows just the golf: the round on now and the list of rounds, on Home and Board', async () => {
       const { el, router, invoke } = await boot('/watch/SPEC-TOKEN', null, {
         me: null,
         functions: { spectate: VIEW },
       });
       expect(router.url).toBe('/watch/SPEC-TOKEN');
       expect(invoke).toHaveBeenCalledWith('spectate', { body: { token: 'SPEC-TOKEN' } });
-      expect(el.querySelector('h1')?.textContent).toContain('Southern Pines 2026');
+      expect(el.querySelector('h1')?.textContent).toMatch(/^Round 2 · /);
+      expect(el.querySelector('ui-header-band .label')?.textContent?.trim()).toBe(
+        'Southern Pines · Oct 8–12',
+      );
+      expect(el.querySelector('ui-header-band .switch')).toBeNull();
       expect(el.querySelector('ui-course-card h2')?.textContent).toBe('Southern Pines');
       expect(el.querySelector('ui-course-card .live')?.textContent).toContain('Live');
       const list = [...el.querySelectorAll('[aria-label=Rounds] ui-list-row')];
@@ -1500,7 +1624,7 @@ describe('App', () => {
         'Live',
         '8:05 AM',
       ]);
-      expect(el.querySelector('ui-tab-bar')).toBeNull();
+      expect(tabs(el)).toEqual(['Home', 'Board']);
       expect(el.querySelector('ui-header-band .action')).toBeNull();
     });
 

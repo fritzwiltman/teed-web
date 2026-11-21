@@ -132,7 +132,8 @@ export class UiCheckbox {
 }
 
 /**
- * A form field: the label above, then the <input>, <select> or <textarea> you put inside it,
+ * A form field: the label above, then the <input> or <textarea> you put inside it (never a
+ * <select>: the design rule is a segmented control or a ui-picker-sheet),
  * 50 tall. Add a [hint] element for a line under the control. Wrap it in nothing else: the field
  * is the <label>, so tapping the label focuses the control.
  */
@@ -171,7 +172,6 @@ export class UiCheckbox {
       color: var(--muted);
     }
     ui-field input,
-    ui-field select,
     ui-field textarea {
       display: block;
       width: 100%;
@@ -200,14 +200,12 @@ export class UiCheckbox {
       font-weight: 500;
     }
     ui-field input:focus-visible,
-    ui-field select:focus-visible,
     ui-field textarea:focus-visible {
       outline: none;
       border-color: var(--accent);
       box-shadow: 0 0 0 2px var(--accent);
     }
     ui-field input:disabled,
-    ui-field select:disabled,
     ui-field textarea:disabled {
       opacity: 0.6;
     }
