@@ -11,6 +11,7 @@ import { Creators } from './creators';
 import { AdminData } from './data';
 import { MyTrips } from './my-trips';
 import { Roster } from './roster';
+import { RoundSetup } from './round-setup';
 import { Rounds } from './rounds';
 import { Stub } from './stub';
 import { TripDetails } from './trip-details';
@@ -73,11 +74,11 @@ export const ADMIN_ROUTES: Routes = [
       { path: 'trips/:id', component: AdminHome, title: 'Teed · Overview', ...trip },
       { path: 'trips/:id/details', component: TripDetails, title: 'Teed · Trip details', ...trip },
       { path: 'trips/:id/rounds', component: Rounds, title: 'Teed · Rounds', ...trip },
+      { path: 'trips/:id/rounds/new', component: RoundSetup, title: 'Teed · Add round', ...trip },
       {
-        path: 'trips/:id/rounds/new',
-        component: Stub,
-        title: 'Teed · Add round',
-        data: { heading: 'Add round', back: 'rounds', backLabel: 'Rounds' },
+        path: 'trips/:id/rounds/:roundId',
+        component: RoundSetup,
+        title: 'Teed · Round setup',
         ...trip,
       },
       { path: 'trips/:id/roster', component: Roster, title: 'Teed · People', ...trip },

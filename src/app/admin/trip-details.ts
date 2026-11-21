@@ -30,6 +30,8 @@ const BLANK: TripFields = {
   pickup_net_double: true,
   spectators_see_money: false,
   handicap_lock_date: null,
+  // A new trip is played where the phone that creates it is: a round's day ends at midnight there.
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York',
 };
 
 /**

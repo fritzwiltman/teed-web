@@ -1,7 +1,28 @@
 import { Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { formatDateRange, formatDay, formatName, formatTime, localDate } from '../core/format';
+import { safeResult } from '../core/rounds';
 import { SUPABASE } from '../core/supabase';
-import { UiCard, UiChip, UiCourseCard, UiHeaderBand, UiListRow, UiSkeleton } from '../core/ui';
+import {
+  BoardTable,
+  Holes,
+  RoundInput,
+  SettleUp,
+  roundBoard,
+  roundNets,
+  settleUp,
+  tripBoard,
+  tripNets,
+} from '../scoring';
+import {
+  UiBoard,
+  UiCard,
+  UiChip,
+  UiCourseCard,
+  UiHeaderBand,
+  UiListRow,
+  UiSectionHead,
+  UiSkeleton,
+} from '../core/ui';
 
 /** What the `spectate` function returns: the trip's header and its rounds, nothing else. */
 export interface SpectatorView {
@@ -11,6 +32,9 @@ export interface SpectatorView {
     start_date: string;
     end_date: string;
     status: string;
+    handicap_allowance: number;
+    strokes_off_low: boolean;
+    pickup_net_double: boolean;
     shows_winnings: boolean;
   };
   rounds: SpectatorRound[];
@@ -22,11 +46,58 @@ export interface SpectatorRound {
   play_date: string;
   tee_time: string | null;
   status: 'scheduled' | 'live' | 'final';
+  holes?: Holes;
   course: { name: string; short_name: string | null; photo_path: string | null } | null;
-  tee: { name: string } | null;
-  formats: { format_key: string }[];
-  groups: { players: { id: string; name: string }[] }[];
+  tee: {
+    name: string;
+    rating?: number | null;
+    slope?: number | null;
+    par?: number[];
+    stroke_index?: number[];
+  } | null;
+  /** Money settings (a point value) are only here when the trip shows spectators winnings. */
+  formats: { format_key: string; settings?: Record<string, unknown> }[];
+  groups: {
+    players: {
+      id: string;
+      name: string;
+      position?: number;
+      handicap_index?: number | null;
+      playing_handicap?: number | null;
+    }[];
+  }[];
   scores: { player_id: string; hole: number; strokes: number }[];
+}
+
+/** A spectator's round as the engine takes it. */
+export function spectatorInput(r: SpectatorRound, trip: SpectatorView['trip']): RoundInput {
+  return {
+    id: r.id,
+    number: r.round_number,
+    holes: r.holes ?? '18',
+    status: r.status,
+    tee: {
+      par: r.tee?.par ?? [],
+      strokeIndex: r.tee?.stroke_index ?? [],
+      rating: r.tee?.rating ?? null,
+      slope: r.tee?.slope ?? null,
+    },
+    rules: {
+      allowance: Number(trip.handicap_allowance ?? 1),
+      offLowMan: trip.strokes_off_low ?? true,
+      pickupNetDouble: trip.pickup_net_double ?? true,
+    },
+    players: r.groups
+      .flatMap((g) => g.players)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        index: p.handicap_index == null ? null : Number(p.handicap_index),
+        storedPlaying: p.playing_handicap ?? null,
+      })),
+    scores: r.scores.map((s) => ({ playerId: s.player_id, hole: s.hole, strokes: s.strokes })),
+    formats: r.formats.map((f) => ({ key: f.format_key, settings: f.settings ?? {} })),
+  };
 }
 
 const REFRESH_MS = 30_000;
@@ -38,7 +109,16 @@ const REFRESH_MS = 30_000;
  */
 @Component({
   selector: 'app-watch',
-  imports: [UiCard, UiChip, UiCourseCard, UiHeaderBand, UiListRow, UiSkeleton],
+  imports: [
+    UiBoard,
+    UiCard,
+    UiChip,
+    UiCourseCard,
+    UiHeaderBand,
+    UiListRow,
+    UiSectionHead,
+    UiSkeleton,
+  ],
   template: `
     @if (view(); as v) {
       <ui-header-band [label]="where()" [title]="v.trip.name" />
@@ -54,6 +134,48 @@ const REFRESH_MS = 30_000;
               <ui-chip>{{ chip }}</ui-chip>
             }
           </ui-course-card>
+          @if (board(); as b) {
+            <ui-board
+              [title]="'Round ' + r.round_number"
+              [columns]="b.table.columns"
+              [valueColumn]="b.table.valueColumn"
+              [rows]="b.table.rows"
+              [live]="live(r)"
+            />
+            @if (b.settle; as s) {
+              <ui-card aria-label="Settle up">
+                <ui-section-head
+                  title="Settle up"
+                  [note]="r.status === 'final' ? 'Final' : 'If it ended now'"
+                />
+                @for (line of s.nets; track line.name) {
+                  <ui-list-row [title]="line.name" [value]="line.text" />
+                }
+                @for (payment of s.payments; track payment) {
+                  <ui-list-row [title]="payment" />
+                }
+              </ui-card>
+            }
+          }
+        }
+        @if (trip(); as t) {
+          <ui-board
+            title="Trip"
+            [columns]="t.table.columns"
+            [valueColumn]="t.table.valueColumn"
+            [rows]="t.table.rows"
+          />
+          @if (t.settle; as s) {
+            <ui-card aria-label="Trip settle up">
+              <ui-section-head title="Trip settle up" />
+              @for (line of s.nets; track line.name) {
+                <ui-list-row [title]="line.name" [value]="line.text" />
+              }
+              @for (payment of s.payments; track payment) {
+                <ui-list-row [title]="payment" />
+              }
+            </ui-card>
+          }
         }
         @if (v.rounds.length) {
           <ui-card aria-label="Rounds">
@@ -109,6 +231,40 @@ export class Watch {
     const rounds = this.view()?.rounds ?? [];
     const today = localDate();
     return rounds.find((r) => r.play_date >= today) ?? rounds.at(-1) ?? null;
+  });
+
+  /** Every round worked out by the same engine the players' boards use. */
+  private readonly results = computed(() => {
+    const v = this.view();
+    return (v?.rounds ?? []).map((r) => ({
+      round: r,
+      result: safeResult(spectatorInput(r, v!.trip)),
+    }));
+  });
+
+  private names(): Record<string, string> {
+    const names: Record<string, string> = {};
+    for (const r of this.results()) for (const p of r.result.players) names[p.id] = p.name;
+    return names;
+  }
+
+  /** The shown round's board once it has a score; its money only when the trip shows winnings. */
+  protected readonly board = computed<{ table: BoardTable; settle: SettleUp | null } | null>(() => {
+    const shown = this.shown();
+    const result = this.results().find((r) => r.round.id === shown?.id)?.result;
+    if (!result || result.state === 'scheduled') return null;
+    const nets = this.view()?.trip.shows_winnings ? roundNets(result) : null;
+    return { table: roundBoard(result), settle: nets && settleUp(nets, this.names()) };
+  });
+
+  /** The trip's board once more than one round has a score. */
+  protected readonly trip = computed<{ table: BoardTable; settle: SettleUp | null } | null>(() => {
+    const started = this.results()
+      .map((r) => r.result)
+      .filter((r) => r.state !== 'scheduled');
+    if (started.length < 2) return null;
+    const nets = this.view()?.trip.shows_winnings ? tripNets(started) : null;
+    return { table: tripBoard(started), settle: nets && settleUp(nets, this.names()) };
   });
 
   constructor() {

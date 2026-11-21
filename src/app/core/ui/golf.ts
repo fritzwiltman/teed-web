@@ -214,20 +214,26 @@ export class UiItineraryRow {
 export interface BoardRow {
   pos: string;
   name: string;
-  value: string;
+  /** The one value of a plain board. Not needed when the board has `columns`. */
+  value?: string;
   thru?: string;
+  /** One cell per column, for a board with `columns`. */
+  cells?: string[];
   /** Under par: the value is drawn in red. */
   under?: boolean;
   /** The row of the person looking. */
   me?: boolean;
 }
 
-/** A leaderboard, mini (on trip home) or full: Pos / Name / value / Thru. */
+/**
+ * A leaderboard, mini (on trip home) or full: Pos / Name / value / Thru. Give `columns` (and
+ * `cells` on each row) for a board with more to say: Gross, Net, To par, Thru, Pts.
+ */
 @Component({
   selector: 'ui-board',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [UiLiveDot],
-  host: { '[class.mini]': 'mini()' },
+  host: { '[class.mini]': 'mini()', '[class.wide]': '!!columns()' },
   template: `
     <table>
       <caption>
@@ -242,8 +248,14 @@ export interface BoardRow {
         <tr>
           <th scope="col" class="pos">Pos</th>
           <th scope="col" class="name">Name</th>
-          <th scope="col" class="num">{{ valueLabel() }}</th>
-          <th scope="col" class="num">Thru</th>
+          @if (columns(); as names) {
+            @for (name of names; track $index) {
+              <th scope="col" class="num">{{ name }}</th>
+            }
+          } @else {
+            <th scope="col" class="num">{{ valueLabel() }}</th>
+            <th scope="col" class="num">Thru</th>
+          }
         </tr>
       </thead>
       <tbody>
@@ -251,8 +263,20 @@ export interface BoardRow {
           <tr [class.me]="row.me">
             <td class="pos">{{ row.pos }}</td>
             <td class="name">{{ row.name }}</td>
-            <td class="num value" [class.under]="row.under">{{ row.value }}</td>
-            <td class="num thru">{{ row.thru ?? '' }}</td>
+            @if (columns()) {
+              @for (cell of row.cells ?? []; track $index) {
+                <td
+                  class="num"
+                  [class.value]="$index === valueColumn()"
+                  [class.under]="$index === valueColumn() && row.under"
+                >
+                  {{ cell }}
+                </td>
+              }
+            } @else {
+              <td class="num value" [class.under]="row.under">{{ row.value }}</td>
+              <td class="num thru">{{ row.thru ?? '' }}</td>
+            }
           </tr>
         }
       </tbody>
@@ -305,6 +329,13 @@ export interface BoardRow {
       width: 60px;
       text-align: right;
     }
+    :host(.wide) .num {
+      width: 46px;
+      padding: 0 var(--s1);
+    }
+    :host(.wide) .pos {
+      width: 44px;
+    }
     th.num:last-child,
     td.num:last-child {
       padding-right: var(--s4);
@@ -328,6 +359,10 @@ export class UiBoard {
   readonly title = input.required<string>();
   readonly rows = input.required<BoardRow[]>();
   readonly valueLabel = input('Net');
+  /** Column headings for a board with several values; each row then gives `cells`. */
+  readonly columns = input<string[]>();
+  /** Which of `columns` is drawn big, and red when the row is under par. */
+  readonly valueColumn = input(0);
   readonly live = input(false, { transform: booleanAttribute });
   readonly mini = input(false, { transform: booleanAttribute });
 }
