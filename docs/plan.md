@@ -282,6 +282,7 @@ The URL is locked: home-screen installs are tied to it.
 | M3 | Admin: trips, roster, courses (+ seed list import), rounds, groups, code generator | A full trip set up without SQL |
 | M3.5 | Design system: Tour tokens, shared components in `app/core/ui`, `/dev/ui`; existing screens restyled; 6-character codes and join links; logo and icons; owner plays on the organizer sign-in | `/dev/ui` is right in light and dark on an iPhone; a texted link logs straight in; "Paste my code" works in the Home Screen app |
 | M3.6 | Accounts, roles and permissions: email-code sign-in, profiles, trip members with roles, invites, trip creators, handicap lock, spectator link, the permissions matrix in RLS. Screens on top of it (You, edit in place, spectator) follow from Opus | The "friend organizes" flow works end to end; every matrix test passes in CI |
+| Slice | Thanksgiving slice (a thin, real cut of M3b, M4, the engine and M6): round setup with one group, the scorecard with a retrying score queue, the scoring engine (handicaps, strokes, net stroke play, the 9-point game, settle-up), live round and trip boards. See "Thanksgiving slice, as built" below | Four rounds at PGA National set up and scored on production; a second phone updates within seconds |
 | M4 | Scorecard for the foursome | Scores save per hole; teammates see edits |
 | M5 | Offline queue | Airplane-mode scores sync with no duplicates |
 | M6 | Live round and trip leaderboards (gross and net) | Two phones update within seconds |
@@ -304,6 +305,39 @@ Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip
 | 9-point game | 3 | 5-3-1; two tied 1st 4-4-1; two tied 2nd 5-2-2; all tied 3-3-3 |
 
 - House rule: pick up at net double bogey (par + 2 + strokes received), on by default.
+
+**Thanksgiving slice, as built** (migration `0010`)
+
+- **Round setup:** `save_round()` creates or changes a round in one transaction: course, tees, `rounds.holes`
+  (18, front or back), day and tee time, one group in playing order, and the games. Net stroke play is always on;
+  the 9-point game is a `round_formats` row (`nine_point`, `{"point_value_cents": 50}`) for a group of exactly
+  three. A player with no handicap index blocks setup ("Add Dad's handicap index"); so do tees with no rating
+  and slope. `delete_round()` renumbers the rest.
+- **Handicaps:** course handicap = index × slope / 113 + (rating − par), unrounded; times the trip's allowance;
+  rounded to the nearest stroke (a half up). Off the low man: strokes over the group's lowest. Nine holes play
+  half, rounded, spread over those nine by stroke index (9-hole ratings aren't in the library). New rounds never
+  store a handicap. Southern Pines 2026 keeps the per-round numbers read off GHIN, and the engine uses a stored
+  number when there is one (the formula reproduces Saturday to Monday exactly; Friday's were Saturday's).
+- **Net scores:** with "pick up at net double bogey" on, a hole counts at most net double bogey in net stroke
+  totals, as the old site did. Gross is always the raw strokes.
+- **Pickups:** "Pick up" saves net double bogey as the strokes and sets `scores.picked_up`; − or + afterwards
+  clears it. The scorecard and the round's page mark it "PU".
+- **9-point game:** a hole counts once all three have a score. It is ranked by actual net strokes (no cap), and
+  a player who picked up ranks below everyone who finished the hole; two pickups tie. The engine throws unless every counted hole is 9
+  points, a finished nine 81 and a finished round 162.
+- **Money:** against par, 3 points a hole: (points − 3 × holes counted) × the point value, in cents. A round's
+  nets sum to zero. Settle-up reduces nets to the fewest payments (whoever owes most pays whoever is owed most);
+  the trip settle-up adds every round's nets and reduces once.
+- **Lifecycle:** Complete = every player has every hole in play. An organizer finalizes a Complete round; a
+  Complete round also becomes Final once its day is over in `trips.timezone`, the next time anyone opens the
+  trip (no cron). A round with holes missing never finalizes on its own.
+- **Score queue:** scores go into a list on the phone and are upserted on (round, player, hole), the table's
+  key, so a retry never duplicates. Retries back off to 30 seconds and run at once when the phone comes back
+  online. Last write wins; conflict rules and service-worker sync are M5.
+- **Live:** `RoundsService` reads the trip's rounds once, saves them on the phone and follows `scores` and
+  `rounds` over Realtime. Boards and settle-up are worked out on the phone from raw strokes; nothing is stored.
+- **Left for the full milestones:** more than one group, team formats, pairing tools, presses, tee-time alerts,
+  a Net / Gross switch, score-change flags on Finalize.
 - **Presses** (match formats only): off, manual, auto when closed out, auto when dormie, auto both; per bet in Nassau.
 - **Ryder Cup** (trip level): two teams; matches worth 1 (½ halve); live match status.
 - **Skins** add-on per round: gross or net, carryovers optional. **Pots:** buy-in × players split by % across games;

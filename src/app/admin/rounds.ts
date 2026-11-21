@@ -5,7 +5,7 @@ import { UiButton, UiCard, UiChip, UiListRow, UiSkeleton } from '../core/ui';
 import { AdminData, AdminError, RoundSummary, Trip } from './data';
 import { OrganizerHeader } from './organizer-header';
 
-/** Rounds: the trip's rounds, in order. Setting one up arrives with M3b. */
+/** Rounds: the trip's rounds, in order. Each opens its setup. */
 @Component({
   selector: 'app-rounds',
   imports: [RouterLink, OrganizerHeader, UiButton, UiCard, UiChip, UiListRow, UiSkeleton],
@@ -19,13 +19,16 @@ import { OrganizerHeader } from './organizer-header';
         @if (list.length) {
           <ui-card aria-label="Rounds">
             @for (round of list; track round.id) {
-              <ui-list-row
+              <a
+                ui-list-row
                 icon="flag"
+                [routerLink]="[round.id]"
                 [title]="round.courses?.short_name || round.courses?.name || 'Course to come'"
                 [detail]="when(round)"
+                chevron
               >
                 <ui-chip>{{ status(round) }}</ui-chip>
-              </ui-list-row>
+              </a>
             }
           </ui-card>
         }

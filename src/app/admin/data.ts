@@ -20,10 +20,47 @@ export interface Trip {
   pickup_net_double: boolean;
   spectators_see_money: boolean;
   handicap_lock_date: string | null;
+  /** Where the trip is played (an IANA zone): a round's day ends at midnight there. */
+  timezone: string;
 }
 
 /** The fields the Trip details form edits. */
 export type TripFields = Omit<Trip, 'id' | 'status'>;
+
+/** A course and its tees, for picking where a round is played. */
+export interface CourseChoice {
+  id: string;
+  name: string;
+  tees: {
+    id: string;
+    name: string;
+    yards: number | null;
+    rating: number | null;
+    slope: number | null;
+    par: number[];
+  }[];
+}
+
+/** A round as its setup screen edits it. */
+export interface RoundSetupFields {
+  course_id: string;
+  tee_id: string;
+  holes: '18' | 'front' | 'back';
+  play_date: string;
+  tee_time: string | null;
+  /** The group, in playing order. */
+  player_ids: string[];
+  nine_point: boolean;
+  point_value_cents: number;
+}
+
+export interface RoundSetupRow extends RoundSetupFields {
+  id: string;
+  round_number: number;
+  status: 'scheduled' | 'live' | 'final';
+  /** Someone has a score in it. */
+  scored: boolean;
+}
 
 export interface RoundSummary {
   id: string;
@@ -80,7 +117,7 @@ export interface CourseSummary {
 }
 
 const TRIP_COLUMNS =
-  'id, name, slug, location, start_date, end_date, status, theme, handicap_allowance, strokes_off_low, pickup_net_double, spectators_see_money, handicap_lock_date';
+  'id, name, slug, location, start_date, end_date, status, theme, handicap_allowance, strokes_off_low, pickup_net_double, spectators_see_money, handicap_lock_date, timezone';
 const COURSE_COLUMNS =
   'id, name, short_name, location, architect, year_opened, description, website_url, scorecard_url, directions_url, photo_path, source, source_ref, ratings_checked_at';
 const PHOTO_BUCKET = 'course-photos';
@@ -89,6 +126,9 @@ const PHOTO_BUCKET = 'course-photos';
 export class AdminError extends Error {}
 
 function fail(error: { message: string; code?: string } | null, fallback: string): never {
+  // The database's own refusals to a round setup are written to be shown ("Add Dad's handicap index").
+  if (error?.code === '23514' && error.message && !error.message.includes('violates'))
+    throw new AdminError(error.message);
   if (error?.code === '23505')
     throw new AdminError('That is already in use. Pick a different one.');
   if (error?.code === '23503')
@@ -180,6 +220,93 @@ export class AdminData {
         scored: round.status !== 'final' && hasScores(groups),
       }),
     );
+  }
+
+  /** The library's courses that have tees, for the round setup's Course and Tees. */
+  async courseChoices(): Promise<CourseChoice[]> {
+    const { data, error } = await this.db
+      .from('courses')
+      .select('id, name, tees(id, name, yards, rating, slope, par)')
+      .order('name');
+    if (error) fail(error, "Couldn't load the course library.");
+    return (data as unknown as CourseChoice[])
+      .filter((c) => c.tees.length)
+      .map((c) => ({ ...c, tees: [...c.tees].sort((a, b) => (b.yards ?? 0) - (a.yards ?? 0)) }));
+  }
+
+  /** One round, as its setup screen edits it. */
+  async roundSetup(roundId: string): Promise<RoundSetupRow> {
+    const { data, error } = await this.db
+      .from('rounds')
+      .select(
+        'id, round_number, status, course_id, tee_id, holes, play_date, tee_time, round_formats(format_key, settings), groups(group_number, group_players(position, player_id, scores(count)))',
+      )
+      .eq('id', roundId)
+      .maybeSingle();
+    if (error || !data) fail(error, "Couldn't load that round.");
+    const row = data as unknown as Omit<
+      RoundSetupRow,
+      'player_ids' | 'nine_point' | 'point_value_cents' | 'scored'
+    > & {
+      round_formats: { format_key: string; settings: Record<string, unknown> }[];
+      groups: (ScoredGroup & { group_players: { position: number; player_id: string }[] })[];
+    };
+    const { round_formats, groups, ...round } = row;
+    const nine = round_formats.find((f) => f.format_key === 'nine_point');
+    return {
+      ...round,
+      player_ids: groups
+        .flatMap((g) => g.group_players)
+        .sort((a, b) => a.position - b.position)
+        .map((gp) => gp.player_id),
+      nine_point: !!nine,
+      point_value_cents: Number(nine?.settings['point_value_cents']) || 0,
+      scored: hasScores(groups),
+    };
+  }
+
+  /** The point value the trip last played the 9-point game for, in cents. Null if it never has. */
+  async lastPointValue(tripId: string): Promise<number | null> {
+    const { data, error } = await this.db
+      .from('rounds')
+      .select('round_number, round_formats(format_key, settings)')
+      .eq('trip_id', tripId)
+      .order('round_number', { ascending: false });
+    if (error) return null;
+    for (const round of data as unknown as {
+      round_formats: { format_key: string; settings: Record<string, unknown> }[];
+    }[]) {
+      const value = Number(
+        round.round_formats.find((f) => f.format_key === 'nine_point')?.settings[
+          'point_value_cents'
+        ],
+      );
+      if (value > 0) return value;
+    }
+    return null;
+  }
+
+  /** Creates a round (no id) or changes one. Returns its id. */
+  async saveRound(tripId: string, roundId: string | null, f: RoundSetupFields): Promise<string> {
+    const { data, error } = await this.db.rpc('save_round', {
+      p_trip_id: tripId,
+      p_round_id: roundId,
+      p_course_id: f.course_id,
+      p_tee_id: f.tee_id,
+      p_holes: f.holes,
+      p_play_date: f.play_date,
+      p_tee_time: f.tee_time,
+      p_player_ids: f.player_ids,
+      p_nine_point: f.nine_point,
+      p_point_value_cents: f.nine_point ? f.point_value_cents : null,
+    });
+    if (error) fail(error, "Couldn't save the round.");
+    return data as string;
+  }
+
+  async deleteRound(roundId: string): Promise<void> {
+    const { error } = await this.db.rpc('delete_round', { p_round_id: roundId });
+    if (error) fail(error, "Couldn't delete the round.");
   }
 
   // ── People ─────────────────────────────────────────────────────────────────

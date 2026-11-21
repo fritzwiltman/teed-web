@@ -6,6 +6,7 @@ import { Board } from './player/board';
 import { InstallStep } from './player/install-step';
 import { Invite } from './player/invite';
 import { Login } from './player/login';
+import { RoundPage } from './player/round-page';
 import { Score } from './player/score';
 import { Shell } from './player/shell';
 import { TripHome } from './player/trip-home';
@@ -74,6 +75,7 @@ export const routes: Routes = [
       { path: 'score', component: Score, title: 'Teed · Scorecard' },
       { path: 'board', component: Board, title: 'Teed · Board' },
       { path: 'trip', component: TripPage, title: 'Teed · Trip' },
+      { path: 'rounds/:roundId', component: RoundPage, title: 'Teed · Round' },
     ],
   },
   { path: '**', redirectTo: '' },

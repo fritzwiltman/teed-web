@@ -42,10 +42,11 @@ jobs:
           node-version: 22
       # Local stack: database, Auth, Data API, the edge runtime serving supabase/functions and the
       # mail catcher the sign-in emails land in.
-      # Only what the tests use; one retry because image pulls are sometimes rate limited.
+      # Only what the tests use (Realtime included: scores must reach a second phone); one retry
+      # because image pulls are sometimes rate limited.
       - name: Start Supabase
         run: |
-          start() { supabase start -x studio,realtime,storage-api,imgproxy,postgres-meta,logflare,vector,supavisor; }
+          start() { supabase start -x studio,storage-api,imgproxy,postgres-meta,logflare,vector,supavisor; }
           start || { supabase stop --no-backup || true; sleep 20; start; }
       # Auth reads the email templates from the gateway once, as it starts, and the gateway is
       # often not up yet: it then sends its stock emails. Starting Auth again picks them up.
@@ -63,3 +64,12 @@ jobs:
           sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' "$RUNNER_TEMP/supabase.env" >> "$GITHUB_ENV"
       - name: Run edge function tests
         run: node --test supabase/tests/functions/accounts.test.mjs
+      # A round end to end with the app's own client library: set up, scored from two phones
+      # over Realtime, retried without duplicates, finalized. After the test above, not beside
+      # it: both read the one mail catcher.
+      - name: Install the client library
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run the round tests
+        # Force the exit: the client library keeps sockets and timers open after the test ends.
+        run: node --test --test-force-exit --test-timeout=180000 supabase/tests/functions/rounds.test.mjs
+        timeout-minutes: 6

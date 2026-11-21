@@ -22,6 +22,7 @@ const VERO: Trip = {
   pickup_net_double: true,
   spectators_see_money: false,
   handicap_lock_date: null,
+  timezone: 'America/New_York',
 };
 const PINES: Trip = {
   ...VERO,
@@ -588,7 +589,7 @@ describe('organizer area', () => {
           round(4, 'scheduled', true),
         ]),
       });
-      const rows = [...page().querySelectorAll('[aria-label=Rounds] ui-list-row')];
+      const rows = [...page().querySelectorAll('[aria-label=Rounds] [ui-list-row]')];
       expect(rows.map((r) => r.querySelector('ui-chip')?.textContent?.trim())).toEqual([
         'Final',
         'Live',
@@ -600,10 +601,220 @@ describe('organizer area', () => {
       expect(rows[1].textContent).toContain('Round 2 · Tue, Jan 12');
     });
 
+    it('opens a round at its setup', async () => {
+      const { page } = await boot('/admin/trips/vero/rounds', 'organizer', {
+        rounds: vi.fn(async () => [round(1, 'scheduled', false)]),
+      });
+      expect(page().querySelector('[aria-label=Rounds] a')?.getAttribute('href')).toBe(
+        '/admin/trips/vero/rounds/r1',
+      );
+    });
+
     it('offers Add round, except on a finished trip', async () => {
       expect((await boot('/admin/trips/vero/rounds')).buttons()).toContain('Add round');
       TestBed.resetTestingModule();
       expect((await boot('/admin/trips/pines/rounds')).buttons()).not.toContain('Add round');
+    });
+  });
+
+  describe('Round setup', () => {
+    const player = (id: string, name: string, index: number | null): RosterPlayer => ({
+      id,
+      name,
+      initials: name[0],
+      role: 'player',
+      handicap_index: index,
+      index_locked: false,
+      buy_in_paid: false,
+      sort_order: 0,
+      is_me: false,
+    });
+    const TRIO = [
+      player('me', 'Fritz', 18.6),
+      player('dad', 'Dad', 22),
+      player('bro', 'Brother', 9.4),
+    ];
+    const COURSES = [
+      {
+        id: 'palmer',
+        name: 'PGA National Palmer',
+        tees: [
+          {
+            id: 'blue',
+            name: 'Blue',
+            yards: 6412,
+            rating: 71.2,
+            slope: 131,
+            par: Array(18).fill(4),
+          },
+          {
+            id: 'white',
+            name: 'White',
+            yards: 6001,
+            rating: 69.4,
+            slope: 127,
+            par: Array(18).fill(4),
+          },
+        ],
+      },
+      {
+        id: 'fazio',
+        name: 'PGA National Fazio',
+        tees: [
+          {
+            id: 'gold',
+            name: 'Gold',
+            yards: 6300,
+            rating: 70.5,
+            slope: 129,
+            par: Array(18).fill(4),
+          },
+        ],
+      },
+    ];
+    const setup = (over: Partial<Record<keyof AdminData, unknown>> = {}) => ({
+      roster: vi.fn(async () => TRIO),
+      courseChoices: vi.fn(async () => COURSES),
+      lastPointValue: vi.fn(async () => null as number | null),
+      roundSetup: vi.fn(),
+      saveRound: vi.fn(async () => 'new-round'),
+      deleteRound: vi.fn(async () => {}),
+      ...over,
+    });
+    const pick = async (page: () => HTMLElement, name: string, value: string) => {
+      const select = page().querySelector<HTMLSelectElement>(`select[name=${name}]`)!;
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      await new Promise((r) => setTimeout(r));
+    };
+
+    it('adds a round: course, tees, day and time, the group, and the 9-point game at 50¢', async () => {
+      const data = setup();
+      const t = await boot('/admin/trips/vero/rounds/new', 'organizer', data);
+      // A trip of three starts with all three in the group and the 9-point game on.
+      expect(t.page().querySelector('[aria-label=Players] .note')?.textContent).toContain(
+        '3 in the group',
+      );
+      expect(t.buttons()).toContain('50¢');
+      await pick(t.page, 'course', 'palmer');
+      await pick(t.page, 'tee', 'blue');
+      await t.type('input[name=time]', '08:10');
+      await t.submit();
+      expect(data.saveRound).toHaveBeenCalledWith('vero', null, {
+        course_id: 'palmer',
+        tee_id: 'blue',
+        holes: '18',
+        play_date: '2027-01-11',
+        tee_time: '08:10',
+        player_ids: ['me', 'dad', 'bro'],
+        nine_point: true,
+        point_value_cents: 50,
+      });
+      expect(t.router.url).toBe('/admin/trips/vero/rounds');
+    });
+
+    it('a course with one set of tees picks them', async () => {
+      const data = setup();
+      const t = await boot('/admin/trips/vero/rounds/new', 'organizer', data);
+      await pick(t.page, 'course', 'fazio');
+      await t.click('$1');
+      await t.submit();
+      expect(data.saveRound).toHaveBeenCalledWith(
+        'vero',
+        null,
+        expect.objectContaining({ course_id: 'fazio', tee_id: 'gold', point_value_cents: 100 }),
+      );
+    });
+
+    it('starts from the point value the trip last played for', async () => {
+      const t = await boot(
+        '/admin/trips/vero/rounds/new',
+        'organizer',
+        setup({ lastPointValue: vi.fn(async () => 25) }),
+      );
+      expect(t.page().querySelector('ui-choice-pills .on')?.textContent?.trim()).toBe('25¢');
+    });
+
+    it('a player with no handicap index blocks the round, by name', async () => {
+      const data = setup({
+        roster: vi.fn(async () => [TRIO[0], player('dad', 'Dad', null), TRIO[2]]),
+      });
+      const t = await boot('/admin/trips/vero/rounds/new', 'organizer', data);
+      await pick(t.page, 'course', 'fazio');
+      const alert = t.page().querySelector('[role=alert] a');
+      expect(alert?.textContent?.trim()).toBe("Add Dad's handicap index");
+      expect(alert?.getAttribute('href')).toBe('/admin/trips/vero/roster');
+      expect(t.page().querySelector<HTMLButtonElement>('button[type=submit]')?.disabled).toBe(true);
+      await t.submit();
+      expect(data.saveRound).not.toHaveBeenCalled();
+    });
+
+    it('only offers the 9-point game to a group of exactly three', async () => {
+      const data = setup({ roster: vi.fn(async () => [...TRIO, player('sam', 'Sam', 12)]) });
+      const t = await boot('/admin/trips/vero/rounds/new', 'organizer', data);
+      expect(t.page().textContent).toContain('For a group of exactly 3');
+      expect(t.buttons()).not.toContain('50¢');
+      await pick(t.page, 'course', 'fazio');
+      await t.submit();
+      expect(data.saveRound).toHaveBeenCalledWith(
+        'vero',
+        null,
+        expect.objectContaining({ player_ids: ['me', 'dad', 'bro', 'sam'], nine_point: false }),
+      );
+    });
+
+    it("shows the database's own refusal", async () => {
+      const data = setup({
+        saveRound: vi.fn(async () => {
+          throw new AdminError('Brother has scores in this round');
+        }),
+      });
+      const t = await boot('/admin/trips/vero/rounds/new', 'organizer', data);
+      await pick(t.page, 'course', 'fazio');
+      await t.submit();
+      expect(t.page().querySelector('[role=alert]')?.textContent).toContain(
+        'Brother has scores in this round',
+      );
+    });
+
+    it('edits a round in place, and deletes it on a second tap', async () => {
+      const data = setup({
+        rounds: vi.fn(async () => [{ id: 'r1', round_number: 1, play_date: '2027-01-11' }]),
+        roundSetup: vi.fn(async () => ({
+          id: 'r1',
+          round_number: 1,
+          status: 'scheduled',
+          scored: false,
+          course_id: 'palmer',
+          tee_id: 'white',
+          holes: 'front',
+          play_date: '2027-01-12',
+          tee_time: '09:00:00',
+          player_ids: ['me', 'dad', 'bro'],
+          nine_point: true,
+          point_value_cents: 100,
+        })),
+      });
+      const t = await boot('/admin/trips/vero/rounds/r1', 'organizer', data);
+      expect(t.page().querySelector('h1')?.textContent).toBe('Round 1');
+      expect(t.page().querySelector('ui-choice-pills .on')?.textContent?.trim()).toBe('$1');
+      await t.submit();
+      expect(data.saveRound).toHaveBeenCalledWith(
+        'vero',
+        'r1',
+        expect.objectContaining({ tee_id: 'white', holes: 'front', point_value_cents: 100 }),
+      );
+      TestBed.resetTestingModule();
+      const again = await boot('/admin/trips/vero/rounds/r1', 'organizer', data);
+      await again.click('Delete round');
+      expect(data.deleteRound).not.toHaveBeenCalled();
+      await again.click('Tap again to delete this round and its scores');
+      expect(data.deleteRound).toHaveBeenCalledWith('r1');
+    });
+
+    it('is not for players', async () => {
+      const t = await boot('/admin/trips/vero/rounds/new', 'player', setup());
+      expect(t.router.url).toBe('/you');
     });
   });
 

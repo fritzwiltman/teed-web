@@ -1,20 +1,40 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { formatDay, formatTime } from '../core/format';
+import { RoundView, RoundsService } from '../core/rounds';
 import { SessionService } from '../core/session';
 import { sendText, spectatorMessage } from '../core/sms';
 import { ThemeChoice, ThemeService } from '../core/theme';
 import { Choice, UiButton, UiCard, UiListRow, UiSectionHead, UiSegmented } from '../core/ui';
 import { PlayerHeader } from './player-header';
 
-/** Trip (itinerary, courses, info). Stub, plus the spectator link, appearance and the way back to You. */
+/** Trip: the rounds (each opens its setup), the spectator link, appearance and the way back to You. The itinerary and trip info come later. */
 @Component({
   selector: 'app-trip-info',
-  imports: [PlayerHeader, UiButton, UiCard, UiListRow, UiSectionHead, UiSegmented],
+  imports: [RouterLink, PlayerHeader, UiButton, UiCard, UiListRow, UiSectionHead, UiSegmented],
   template: `
     <app-player-header label="Trip" [title]="session()?.trip?.name ?? ''" />
     <main class="content">
-      <ui-card pad>
-        <p>The itinerary, courses and trip info will be here.</p>
-      </ui-card>
+      @if (rounds().length) {
+        <ui-card aria-label="Rounds">
+          <ui-section-head title="Rounds" />
+          @for (r of rounds(); track r.row.id) {
+            <a
+              ui-list-row
+              icon="flag"
+              [routerLink]="['/rounds', r.row.id]"
+              [title]="
+                'R' +
+                r.row.round_number +
+                ' · ' +
+                (r.row.courses?.short_name || r.row.courses?.name || '')
+              "
+              [detail]="when(r)"
+              chevron
+            ></a>
+          }
+        </ui-card>
+      }
 
       <ui-card aria-label="Spectators">
         <button
@@ -47,6 +67,13 @@ export class TripPage {
   private readonly sessions = inject(SessionService);
   protected readonly session = this.sessions.session;
   protected readonly theme = inject(ThemeService);
+  private readonly roundsService = inject(RoundsService);
+  protected readonly rounds = computed(() => this.roundsService.for(this.session()?.trip.id));
+
+  /** "Thu, Nov 26 · 8:10 AM" */
+  protected when(r: RoundView): string {
+    return [formatDay(r.row.play_date), formatTime(r.row.tee_time)].filter(Boolean).join(' · ');
+  }
 
   protected readonly sharing = signal(false);
   protected readonly shareNote = signal<string | undefined>(undefined);

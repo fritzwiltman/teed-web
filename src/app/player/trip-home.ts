@@ -3,8 +3,19 @@ import { RouterLink } from '@angular/router';
 import { formatDateRange, formatDay, formatName, formatTime, localDate } from '../core/format';
 import { InstallService } from '../core/install';
 import { inPlay } from '../core/round';
+import { RoundsService } from '../core/rounds';
+import { nextHole, toParText } from '../scoring';
 import { SessionService } from '../core/session';
-import { UiButton, UiCard, UiChip, UiCourseCard, UiListRow, UiSkeleton } from '../core/ui';
+import {
+  BoardRow,
+  UiBoard,
+  UiButton,
+  UiCard,
+  UiChip,
+  UiCourseCard,
+  UiListRow,
+  UiSkeleton,
+} from '../core/ui';
 import { PlayerHeader } from './player-header';
 
 interface RoundRow {
@@ -33,6 +44,7 @@ interface RoundRow {
   imports: [
     RouterLink,
     PlayerHeader,
+    UiBoard,
     UiButton,
     UiCard,
     UiChip,
@@ -44,7 +56,7 @@ interface RoundRow {
     @if (session(); as s) {
       <app-player-header [label]="where()" [title]="s.trip.name" />
       <main class="content">
-        @if (loading()) {
+        @if (loading() && !shown()) {
           <ui-skeleton shape="block" height="260px" />
         } @else if (shown(); as r) {
           <ui-course-card
@@ -61,10 +73,20 @@ interface RoundRow {
             }
             @if (r.round.status !== 'final') {
               <a ui-button routerLink="/score">{{
-                r.live ? 'Continue scoring' : 'Start scoring'
+                (r.live ? 'Continue scoring' : 'Start scoring') +
+                  (hole() ? ' · Hole ' + hole() : '')
               }}</a>
             }
           </ui-course-card>
+          @if (mini(); as board) {
+            <ui-board
+              mini
+              [title]="'Round ' + r.round.round_number"
+              valueLabel="Net"
+              [rows]="board.rows"
+              [live]="board.live"
+            />
+          }
         }
 
         @if (role(); as r) {
@@ -87,6 +109,7 @@ interface RoundRow {
 export class TripHome {
   private readonly sessions = inject(SessionService);
   private readonly install = inject(InstallService);
+  private readonly live = inject(RoundsService);
   protected readonly session = this.sessions.session;
 
   private readonly rounds = signal<RoundRow[]>([]);
@@ -118,7 +141,7 @@ export class TripHome {
    * name, chips for tee time, format and tees (empty ones dropped), and my group.
    */
   protected readonly shown = computed(() => {
-    const rows = this.rounds();
+    const rows = this.rows();
     const today = localDate();
     const round = rows.find((r) => r.play_date >= today) ?? rows.at(-1);
     if (!round) return null;
@@ -154,6 +177,69 @@ export class TripHome {
       group,
       photo,
     };
+  });
+
+  /**
+   * The trip's rounds: the live ones when they are in hand (they are saved on the phone, so Home
+   * has its round card with no signal), else what this screen read itself.
+   */
+  private readonly rows = computed<RoundRow[]>(() => {
+    const live = this.live.for(this.session()?.trip.id);
+    if (!live.length) return this.rounds();
+    return [...live]
+      .sort(
+        (a, b) =>
+          a.row.play_date.localeCompare(b.row.play_date) || a.row.round_number - b.row.round_number,
+      )
+      .map(({ row }) => ({
+        round_number: row.round_number,
+        play_date: row.play_date,
+        tee_time: row.tee_time,
+        status: row.status,
+        courses: row.courses,
+        tees: row.tees,
+        round_formats: row.round_formats,
+        groups: row.groups.map((g) => ({
+          group_players: g.group_players.map((gp) => ({
+            position: gp.position,
+            players: gp.player,
+            scores: [{ count: gp.scores?.length ?? 0 }],
+          })),
+        })),
+      }));
+  });
+
+  /** The shown round as the engine has it, once the live rounds are in hand. */
+  private readonly scored = computed(() => {
+    const number = this.shown()?.round.round_number;
+    return (
+      this.live.for(this.session()?.trip.id).find((r) => r.row.round_number === number) ?? null
+    );
+  });
+
+  /** The hole "Continue scoring" opens on. */
+  protected readonly hole = computed(() => {
+    const scored = this.scored();
+    return scored && scored.result.state !== 'final' ? nextHole(scored.result) : null;
+  });
+
+  /** The mini board: net to par and thru, once the round has a score. */
+  protected readonly mini = computed<{ rows: BoardRow[]; live: boolean } | null>(() => {
+    const result = this.scored()?.result;
+    if (!result || result.state === 'scheduled') return null;
+    const me = this.session()?.player.id;
+    const rows = result.players
+      .filter((p) => p.thru > 0)
+      .sort((a, b) => (a.toPar ?? 999) - (b.toPar ?? 999))
+      .map((p, _i, all) => ({
+        pos: `${all.findIndex((o) => o.toPar === p.toPar) + 1}`,
+        name: p.name,
+        value: toParText(p.toPar),
+        thru: result.state === 'final' ? 'F' : `${p.thru}`,
+        under: (p.toPar ?? 0) < 0,
+        me: p.id === me,
+      }));
+    return rows.length ? { rows, live: result.state === 'live' } : null;
   });
 
   constructor() {

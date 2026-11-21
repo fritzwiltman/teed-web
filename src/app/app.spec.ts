@@ -5,6 +5,9 @@ import { App } from './app';
 import { routes } from './app.routes';
 import { AuthService, Me } from './core/auth';
 import { InstallPlatform, InstallService } from './core/install';
+import { RoundRow, RoundsService, TripRules, roundInput, safeResult } from './core/rounds';
+import { roundRow } from './core/rounds.testing';
+import { ScoreQueue } from './core/score-queue';
 import { MyTrip, SessionService, TripSession } from './core/session';
 import { SUPABASE } from './core/supabase';
 
@@ -56,6 +59,11 @@ interface Options {
   claim?: unknown;
   /** Signing in from the form: the person it signs in as. */
   signsInAs?: Me;
+  /** The open trip's rounds as the live rounds service has them. */
+  live?: RoundRow[];
+  rules?: Partial<TripRules>;
+  /** Scores still waiting to reach the server. */
+  syncing?: number;
 }
 
 /** Boots the app at a URL, signed in (or not) with the given open trip, and returns the page. */
@@ -125,6 +133,61 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     revalidate: vi.fn(async () => {}),
     leave: vi.fn(() => session.set(null)),
   };
+  // The live rounds: real engine, no server. Entering a score lands in the round at once.
+  const liveRows = signal(options.live ?? []);
+  const rules: TripRules = {
+    handicap_allowance: 1,
+    strokes_off_low: true,
+    pickup_net_double: true,
+    ...options.rules,
+  };
+  const views = computed(() =>
+    liveRows().map((row) => ({ row, result: safeResult(roundInput(row, rules, [])) })),
+  );
+  const setScore = vi.fn(
+    (roundId: string, playerId: string, hole: number, strokes: number, pickedUp = false) =>
+      liveRows.update((rows) =>
+        rows.map((row) =>
+          row.id !== roundId
+            ? row
+            : {
+                ...row,
+                groups: row.groups.map((g) => ({
+                  ...g,
+                  group_players: g.group_players.map((gp) =>
+                    gp.player?.id !== playerId
+                      ? gp
+                      : {
+                          ...gp,
+                          scores: [
+                            ...gp.scores.filter((x) => x.hole !== hole),
+                            { hole, strokes, picked_up: pickedUp },
+                          ],
+                        },
+                  ),
+                })),
+              },
+        ),
+      ),
+  );
+  const finalize = vi.fn(async (roundId: string) => {
+    liveRows.update((rows) =>
+      rows.map((r) => (r.id === roundId ? { ...r, status: 'final' as const } : r)),
+    );
+    return true;
+  });
+  const rounds = {
+    tripId: computed(() => session()?.trip.id ?? null),
+    rules: computed(() => rules),
+    rounds: views,
+    for: (tripId: string | undefined) => (tripId && tripId === session()?.trip.id ? views() : []),
+    load: vi.fn(async () => true),
+    watch: vi.fn(async () => {}),
+    unwatch: vi.fn(),
+    setScore,
+    finalize,
+  };
+  const queue = { count: signal(options.syncing ?? 0), refused: signal(0) };
   const promptInstall = vi.fn(async () => {});
   const share = vi.fn(async (_data: { text: string }) => {});
   Object.defineProperty(navigator, 'share', { configurable: true, value: share });
@@ -136,6 +199,8 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
       { provide: SUPABASE, useValue: db },
       { provide: AuthService, useValue: auth },
       { provide: SessionService, useValue: sessions },
+      { provide: RoundsService, useValue: rounds },
+      { provide: ScoreQueue, useValue: queue },
       {
         provide: InstallService,
         useValue: {
@@ -196,6 +261,9 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     invoke,
     share,
     promptInstall,
+    setScore,
+    finalize,
+    queue,
     el,
     click,
     type,
@@ -588,6 +656,381 @@ describe('App', () => {
       await click('Share the spectator link');
       expect(share).not.toHaveBeenCalled();
       expect(el.querySelector('[aria-label=Spectators]')?.textContent).toContain('No link yet');
+    });
+  });
+
+  // ── Scoring ────────────────────────────────────────────────────────────────
+  // Fritz (10), Dad (20) and Brother (10) at 100% off the low man, par 4 everywhere, stroke index
+  // = hole number: Dad gets a stroke on holes 1 to 10. SAVED's player is p1; here "me" is Fritz.
+
+  const ME: TripSession = { ...SAVED, player: { ...SAVED.player, id: 'me' } };
+  const today = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const playing = (scores: Record<string, number[]> = {}, over: Partial<RoundRow> = {}) =>
+    roundRow({ play_date: today(), ...over }, scores);
+  const all = (n: number, strokes: number) => Array<number>(n).fill(strokes);
+  const cells = (el: HTMLElement, selector = 'ui-board') =>
+    [...el.querySelectorAll(`${selector} tbody tr`)].map((tr) =>
+      [...tr.querySelectorAll('td')].map((td) => td.textContent?.trim()),
+    );
+  /** A list row's title, detail and value, in that order. */
+  const rowText = (row: Element) =>
+    ['.title', '.detail', '.value']
+      .map((part) => row.querySelector(part)?.textContent?.trim())
+      .filter(Boolean)
+      .join(' ');
+  const stepper = (el: HTMLElement, name: string) =>
+    [...el.querySelectorAll('ui-stepper-row')].find(
+      (row) => row.querySelector('.name')?.textContent?.trim() === name,
+    )!;
+  const game = (el: HTMLElement, title: string) =>
+    [...el.querySelectorAll('ui-game-card')].find((c) => c.textContent?.includes(title));
+
+  describe('Scorecard', () => {
+    it('opens on the next unscored hole, every row at par', async () => {
+      const { el } = await boot('/score', ME, {
+        live: [playing({ me: [4, 5], dad: [6, 6], bro: [5] })],
+      });
+      expect(el.querySelector('ui-header-band .label')?.textContent).toContain('Round 1');
+      expect(el.querySelector('[aria-label="Hole 2"]')).toBeTruthy();
+      expect(el.textContent).toContain('Par 4 · SI 2');
+      expect([...el.querySelectorAll('ui-stepper-row .name')].map((n) => n.textContent)).toEqual([
+        'Fritz',
+        'Dad',
+        'Brother',
+      ]);
+      // Brother has no score on 2 yet: his row sits at par, marked not saved.
+      expect(stepper(el, 'Brother').querySelector('output')?.textContent?.trim()).toBe('4');
+      expect(stepper(el, 'Brother').textContent).toContain('not saved');
+      // Dad gets a stroke here: a dot, and his 6 nets 5.
+      expect(stepper(el, 'Dad').textContent).toContain('● · net 5');
+    });
+
+    it('+ and − save at once, for anyone in the group', async () => {
+      const { el, setScore, settle } = await boot('/score', ME, { live: [playing()] });
+      stepper(el, 'Dad').querySelector<HTMLButtonElement>('button.plus')!.click();
+      await settle();
+      expect(setScore).toHaveBeenCalledWith('r1', 'dad', 1, 5, false);
+      stepper(el, 'Fritz').querySelector<HTMLButtonElement>('button.minus')!.click();
+      await settle();
+      expect(setScore).toHaveBeenCalledWith('r1', 'me', 1, 3, false);
+      expect(stepper(el, 'Dad').querySelector('output')?.textContent?.trim()).toBe('5');
+    });
+
+    it('"Save" writes par for anyone not touched, moves on, and shows the 9-point split', async () => {
+      const { el, setScore, click, settle } = await boot('/score', ME, { live: [playing()] });
+      stepper(el, 'Brother').querySelector<HTMLButtonElement>('button.plus')!.click();
+      await settle();
+      await click('Save · Hole 2');
+      // Brother's 5 was his own; Fritz and Dad are saved at par.
+      expect(setScore.mock.calls).toEqual([
+        ['r1', 'bro', 1, 5, false],
+        ['r1', 'me', 1, 4, false],
+        ['r1', 'dad', 1, 4, false],
+      ]);
+      expect(el.querySelector('[aria-label="Hole 2"]')).toBeTruthy();
+      await click('Back');
+      // Nets 4, 3 (Dad's stroke), 5: Dad 5, Fritz 3, Brother 1.
+      const split = game(el, '9-point game')!;
+      expect(
+        [...split.querySelectorAll('.value, dd')].map((v) => v.textContent?.trim()).join(' '),
+      ).toContain('3');
+      expect(split.textContent).toMatch(/Fritz\s*3/);
+      expect(split.textContent).toMatch(/Dad\s*5/);
+      expect(split.textContent).toMatch(/Brother\s*1/);
+    });
+
+    it('shows Out, In and Total points, which add to 9 a hole', async () => {
+      const { el } = await boot('/score', ME, {
+        live: [playing({ me: all(9, 4), dad: all(9, 5), bro: all(9, 6) })],
+      });
+      // Dad nets 4 on every hole: he and Fritz tie for low, 4-4-1, nine times.
+      const totals = game(el, 'points')!;
+      expect(totals.textContent).toContain('9 holes');
+      expect(totals.textContent).toMatch(/Fritz\s*Out 36 · In 0 · Total 36/);
+      expect(totals.textContent).toMatch(/Brother\s*Out 9 · In 0 · Total 9/);
+      expect(totals.textContent).toMatch(/All\s*Out 81 · In 0 · Total 81/);
+      expect(game(el, 'Strokes')!.textContent).toMatch(/Dad\s*Gross 45 · Net 36/);
+    });
+
+    it('the hole picker jumps to any hole', async () => {
+      const { el, click } = await boot('/score', ME, {
+        live: [playing({ me: [4], dad: [5], bro: [4] })],
+      });
+      await click('All holes');
+      const pills = [...el.querySelectorAll('ui-sheet ui-choice-pills button')].map((b) =>
+        b.textContent?.trim(),
+      );
+      expect(pills).toHaveLength(18);
+      expect(pills[0]).toBe('1 ✓');
+      await click('14');
+      expect(el.querySelector('[aria-label="Hole 14"]')).toBeTruthy();
+      expect(el.querySelector('ui-sheet section')).toBeNull();
+    });
+
+    it('"Pick up" records net double bogey: par + 2 + strokes on the hole', async () => {
+      const { el, click, setScore, settle } = await boot('/score', ME, { live: [playing()] });
+      await click('Pick up');
+      const rows = [...el.querySelectorAll('ui-sheet [ui-list-row]')].map((r) => rowText(r));
+      expect(rows).toEqual(['Fritz 6', 'Dad 7', 'Brother 6']);
+      await click('Dad');
+      expect(setScore).toHaveBeenCalledWith('r1', 'dad', 1, 7, true);
+      // The card marks it "PU".
+      expect(stepper(el, 'Dad').textContent).toContain('PU');
+      expect(stepper(el, 'Dad').querySelector('output')?.textContent?.trim()).toBe('7');
+      // − afterwards is a played score again: the mark goes.
+      stepper(el, 'Dad').querySelector<HTMLButtonElement>('button.minus')!.click();
+      await settle();
+      expect(setScore).toHaveBeenLastCalledWith('r1', 'dad', 1, 6, false);
+      expect(stepper(el, 'Dad').textContent).not.toContain('PU');
+    });
+
+    it('a pickup ranks below a finisher with the same net', async () => {
+      // Hole 1: Fritz holes out for 6; Dad picks up at 7 (net 6 too); Brother makes 4.
+      const { el, click, settle } = await boot('/score', ME, { live: [playing()] });
+      for (let i = 0; i < 2; i++) {
+        stepper(el, 'Fritz').querySelector<HTMLButtonElement>('button.plus')!.click();
+        await settle();
+      }
+      await click('Pick up');
+      await click('Dad');
+      await click('Save · Hole 2');
+      await click('Back');
+      const split = game(el, '9-point game')!;
+      expect(split.textContent).toMatch(/Fritz\s*3/);
+      expect(split.textContent).toMatch(/Dad\s*1/);
+      expect(split.textContent).toMatch(/Brother\s*5/);
+    });
+
+    it('hides "Pick up" when the trip does not play that rule', async () => {
+      const { el } = await boot('/score', ME, {
+        live: [playing()],
+        rules: { pickup_net_double: false },
+      });
+      expect(
+        [...el.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Pick up'),
+      ).toBe(false);
+    });
+
+    it('says how many scores are still syncing', async () => {
+      const { el, queue, settle } = await boot('/score', ME, { live: [playing()], syncing: 2 });
+      expect(el.querySelector('[role=status]')?.textContent?.trim()).toBe('Syncing 2 scores');
+      queue.count.set(1);
+      await settle();
+      expect(el.querySelector('[role=status]')?.textContent?.trim()).toBe('Syncing 1 score');
+      queue.count.set(0);
+      await settle();
+      expect(el.querySelector('[role=status]')).toBeNull();
+    });
+
+    it('a final round, and someone outside the group, can look but not change', async () => {
+      const final = await boot('/score', ME, {
+        live: [playing({ me: all(18, 4), dad: all(18, 5), bro: all(18, 5) }, { status: 'final' })],
+      });
+      expect(final.el.querySelector('ui-stepper-row')).toBeNull();
+      expect(final.el.textContent).toContain('Final');
+      expect(
+        [...final.el.querySelectorAll('button')].some((b) =>
+          /Save|Pick up/.test(b.textContent ?? ''),
+        ),
+      ).toBe(false);
+      TestBed.resetTestingModule();
+      // SAVED's player (p1) is on the trip but not in this group.
+      const outsider = await boot('/score', SAVED, { live: [playing()] });
+      expect(outsider.el.querySelector('ui-stepper-row')).toBeNull();
+      TestBed.resetTestingModule();
+      // The organizer can enter for a group they are not in.
+      const organizer = await boot('/score', ORGANIZER, { live: [playing()] });
+      expect(organizer.el.querySelectorAll('ui-stepper-row')).toHaveLength(3);
+    });
+
+    it('a draft trip cannot be scored yet', async () => {
+      const draft: TripSession = { ...ME, trip: { ...ME.trip, status: 'draft' } };
+      const { el } = await boot('/score', draft, { live: [playing()] });
+      expect(el.querySelector('ui-stepper-row')).toBeNull();
+      expect(el.textContent).toContain('Publish the trip to start scoring.');
+    });
+
+    it('with no rounds, says so', async () => {
+      const { el } = await boot('/score', ME);
+      expect(el.textContent).toContain('No round to score yet.');
+    });
+  });
+
+  describe('Board', () => {
+    // Nine holes in: Fritz 36 (E), Dad 45 gross, 36 net (E), Brother 54 (+18).
+    const nine = { me: all(9, 4), dad: all(9, 5), bro: all(9, 6) };
+    const full = { me: all(18, 4), dad: [...all(10, 5), ...all(8, 4)], bro: all(18, 5) };
+
+    it('a round in play: gross, net, to par, thru and points, live', async () => {
+      const { el } = await boot('/board', ME, { live: [playing(nine)] });
+      expect(
+        [...el.querySelectorAll('ui-board thead th')].map((th) => th.textContent?.trim()),
+      ).toEqual(['Pos', 'Name', 'Gross', 'Net', 'To par', 'Thru', 'Pts']);
+      expect(cells(el)).toEqual([
+        ['T1', 'Fritz', '36', '36', 'E', '9', '36'],
+        ['T1', 'Dad', '45', '36', 'E', '9', '36'],
+        ['3', 'Brother', '54', '54', '+18', '9', '9'],
+      ]);
+      expect(el.querySelector('ui-board ui-live-dot')).toBeTruthy();
+      expect(el.querySelector('ui-board tr.me')?.textContent).toContain('Fritz');
+      expect(el.querySelector('ui-choice-pills .on')?.textContent?.trim()).toBe('R1 · Live');
+    });
+
+    it('settle up reads "If it ended now", worded for whoever is looking', async () => {
+      const { el } = await boot('/board', ME, { live: [playing(nine)] });
+      const card = el.querySelector('[aria-label="Settle up"]')!;
+      expect(card.querySelector('.note')?.textContent).toContain('If it ended now · 50¢ a point');
+      // Against 27: Fritz +9, Dad +9, Brother −18, at 50¢.
+      expect([...card.querySelectorAll('ui-list-row')].map((r) => rowText(r))).toEqual([
+        'Fritz +$4.50',
+        'Dad +$4.50',
+        'Brother −$9.00',
+        'Brother pays you $4.50',
+        'Brother pays Dad $4.50',
+      ]);
+    });
+
+    it('once complete, only an organizer is offered Finalize; after it the settle-up is final', async () => {
+      const player = await boot('/board', ME, { live: [playing(full)] });
+      expect(player.el.querySelector('[aria-label=Finalize]')).toBeNull();
+      TestBed.resetTestingModule();
+      const organizer: TripSession = { ...ME, player: { ...ME.player, role: 'organizer' } };
+      const { el, click, finalize } = await boot('/board', organizer, { live: [playing(full)] });
+      expect(el.querySelector('[aria-label="Settle up"] .note')?.textContent).toContain(
+        'If it ended now',
+      );
+      await click('Finalize Round 1');
+      expect(finalize).toHaveBeenCalledWith('r1');
+      expect(el.querySelector('[aria-label=Finalize]')).toBeNull();
+      expect(el.querySelector('[aria-label="Settle up"] .note')?.textContent).toContain(
+        'Final · 50¢ a point',
+      );
+    });
+
+    it('a round still in play is not offered Finalize', async () => {
+      const organizer: TripSession = { ...ME, player: { ...ME.player, role: 'organizer' } };
+      const { el } = await boot('/board', organizer, { live: [playing(nine)] });
+      expect(el.querySelector('[aria-label=Finalize]')).toBeNull();
+    });
+
+    it('the Trip board adds the rounds up, and settles the trip once', async () => {
+      const second = playing(nine, { id: 'r2', round_number: 2, status: 'scheduled' });
+      const first = playing(full, { status: 'final', play_date: '2026-11-26' });
+      const { el, click } = await boot('/board', ME, { live: [first, second] });
+      await click('Trip');
+      expect(
+        [...el.querySelectorAll('ui-board thead th')].map((th) => th.textContent?.trim()),
+      ).toEqual(['Pos', 'Name', 'Rounds', 'Gross', 'Net', 'To par', 'Pts']);
+      // Round 1: Fritz 72 (E), Dad 82 gross 72 net (E), Brother 90 (+18); points 72 / 72 / 18.
+      expect(cells(el)).toEqual([
+        ['T1', 'Fritz', '2', '108', '108', 'E', '108'],
+        ['T1', 'Dad', '2', '127', '108', 'E', '108'],
+        ['3', 'Brother', '2', '144', '144', '+36', '27'],
+      ]);
+      const card = el.querySelector('[aria-label="Settle up"]')!;
+      // Round 1 against 54: +18, +18, −36 = +$9, +$9, −$18. Round 2 so far: +$4.50, +$4.50, −$9.
+      expect([...card.querySelectorAll('ui-list-row')].map((r) => rowText(r))).toEqual([
+        'Fritz +$13.50',
+        'Dad +$13.50',
+        'Brother −$27.00',
+        'Brother pays you $13.50',
+        'Brother pays Dad $13.50',
+      ]);
+    });
+
+    it('with no rounds, says so', async () => {
+      expect((await boot('/board', ME)).el.textContent).toContain('No rounds yet.');
+    });
+  });
+
+  describe('Home during a round', () => {
+    const homeRound = (groups: unknown[]) => ({
+      round_number: 1,
+      play_date: today(),
+      tee_time: '08:10:00',
+      status: 'scheduled',
+      courses: { name: 'PGA National Palmer', photo_path: null },
+      tees: { name: 'Blue' },
+      round_formats: [{ format_key: 'stroke' }, { format_key: 'nine_point' }],
+      groups,
+    });
+
+    it('"Continue scoring · Hole N" and a mini board', async () => {
+      const scored = [
+        {
+          group_players: [
+            { position: 1, players: { id: 'me', name: 'Fritz' }, scores: [{ count: 2 }] },
+          ],
+        },
+      ];
+      const { el } = await boot('/home', ME, {
+        rounds: [homeRound(scored)],
+        live: [playing({ me: [4, 3], dad: [6, 5], bro: [4] })],
+      });
+      const button = el.querySelector('ui-course-card a[ui-button]');
+      expect(button?.textContent?.trim()).toBe('Continue scoring · Hole 2');
+      expect(cells(el, 'ui-board.mini')).toEqual([
+        ['1', 'Fritz', '−1', '2'],
+        ['2', 'Brother', 'E', '1'],
+        ['3', 'Dad', '+1', '2'],
+      ]);
+    });
+
+    it('before the first score: "Start scoring · Hole 1" and no board', async () => {
+      const { el } = await boot('/home', ME, { rounds: [homeRound([])], live: [playing()] });
+      expect(el.querySelector('ui-course-card a[ui-button]')?.textContent?.trim()).toBe(
+        'Start scoring · Hole 1',
+      );
+      expect(el.querySelector('ui-board')).toBeNull();
+    });
+  });
+
+  describe('a round’s page', () => {
+    it('shows the setup and the strokes to everyone; only organizers get Edit', async () => {
+      const { el } = await boot('/rounds/r1', ME, { live: [playing()] });
+      const setup = el.querySelector('[aria-label="Round setup"]')!;
+      expect(setup.textContent).toContain('PGA National Palmer');
+      expect(setup.textContent).toContain('Blue · 6,412 yds · par 72');
+      expect(setup.textContent).toContain('18 holes');
+      expect(setup.textContent).toMatch(/9-point game\s*50¢ a point/);
+      const strokes = el.querySelector('[aria-label=Strokes]')!;
+      expect(strokes.querySelector('.note')?.textContent).toContain('100% · off the low man');
+      expect([...strokes.querySelectorAll('ui-list-row')].map((r) => rowText(r))).toEqual([
+        'Fritz Plays off 10 0',
+        'Dad Plays off 20 10',
+        'Brother Plays off 10 0',
+      ]);
+      expect(
+        [...el.querySelectorAll('a')].some((a) => a.textContent?.trim() === 'Edit round'),
+      ).toBe(false);
+      TestBed.resetTestingModule();
+      const organizer: TripSession = { ...ME, player: { ...ME.player, role: 'organizer' } };
+      const edit = (await boot('/rounds/r1', organizer, { live: [playing()] })).el;
+      expect(
+        [...edit.querySelectorAll('a')]
+          .find((a) => a.textContent?.trim() === 'Edit round')
+          ?.getAttribute('href'),
+      ).toBe('/admin/trips/t1/rounds/r1');
+    });
+
+    it('shows the scores, a pickup marked "PU"', async () => {
+      const row = playing({ me: [4, 5], dad: [6, 7], bro: [4] });
+      row.groups[0].group_players.find((gp) => gp.player?.id === 'dad')!.scores[1].picked_up = true;
+      const { el } = await boot('/rounds/r1', ME, { live: [row] });
+      expect([...el.querySelectorAll('[aria-label=Scores] ui-list-row')].map(rowText)).toEqual([
+        'Fritz 4 · 5 9',
+        'Dad 6 · 7 PU 13',
+        'Brother 4 4',
+      ]);
+    });
+
+    it('the Trip tab lists the rounds', async () => {
+      const { el } = await boot('/trip', ME, { live: [playing({}, { play_date: '2026-11-26' })] });
+      expect(rows(el, 'Rounds')).toEqual(['R1 · Palmer']);
+      expect(el.querySelector('[aria-label=Rounds] a')?.getAttribute('href')).toBe('/rounds/r1');
     });
   });
 
