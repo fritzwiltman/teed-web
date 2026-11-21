@@ -468,7 +468,7 @@ select is((select array_agg(k order by k) from jsonb_object_keys(public.spectato
                 'start_date', 'status', 'strokes_off_low'],
           'the trip header has no buy-in, lock date or anything about the people');
 select is((select array_agg(k order by k) from jsonb_object_keys(public.spectator_view('hash-one') #> '{rounds,0}') k),
-          array['course', 'formats', 'groups', 'id', 'play_date', 'presses', 'round_number', 'scores', 'status', 'tee', 'tee_time'],
+          array['course', 'formats', 'groups', 'holes', 'id', 'play_date', 'presses', 'round_number', 'scores', 'status', 'tee', 'tee_time'],
           'a round has its course, tee, formats, groups, scores and presses');
 select is((select array_agg(k order by k) from jsonb_object_keys(public.spectator_view('hash-one') #> '{rounds,0,groups,0,players,0}') k),
           array['course_handicap', 'handicap_index', 'id', 'initials', 'name', 'playing_handicap', 'position', 'team'],
