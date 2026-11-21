@@ -29,6 +29,9 @@ jobs:
   functions:
     name: Edge function tests
     runs-on: ubuntu-latest
+    env:
+      # A throwaway value for the local stack. Production has its own, set as a function secret.
+      SPECTATOR_LINK_SECRET: local-ci-only-0123456789abcdef0123456789abcdef
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
@@ -37,16 +40,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Local stack: database, Auth, Data API and the edge runtime serving supabase/functions.
+      # Local stack: database, Auth, Data API, the edge runtime serving supabase/functions and the
+      # mail catcher the sign-in emails land in.
       # Only what the tests use; one retry because image pulls are sometimes rate limited.
       - name: Start Supabase
         run: |
-          start() { supabase start -x studio,realtime,storage-api,imgproxy,mailpit,postgres-meta,logflare,vector,supavisor; }
+          start() { supabase start -x studio,realtime,storage-api,imgproxy,postgres-meta,logflare,vector,supavisor; }
           start || { supabase stop --no-backup || true; sleep 20; start; }
+      # Auth reads the email templates from the gateway once, as it starts, and the gateway is
+      # often not up yet: it then sends its stock emails. Starting Auth again picks them up.
+      - name: Reload the email templates
+        run: |
+          docker restart supabase_auth_teed
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:54321/auth/v1/health -H "apikey: $(supabase status -o env | sed -n 's/^ANON_KEY="\(.*\)"$/\1/p')" > /dev/null && break
+            sleep 1
+          done
       - name: Export local URL and keys
         run: |
           supabase status -o env > "$RUNNER_TEMP/supabase.env"
           cut -d= -f1 "$RUNNER_TEMP/supabase.env"
           sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' "$RUNNER_TEMP/supabase.env" >> "$GITHUB_ENV"
       - name: Run edge function tests
-        run: node --test supabase/tests/functions/redeem-code.test.mjs
+        run: node --test supabase/tests/functions/accounts.test.mjs

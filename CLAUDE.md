@@ -1,7 +1,7 @@
 # Teed
 
-Live scoring and trip hub for golf trips. Players log in from a texted link (a personal code), score hole by hole,
-and follow live leaderboards; an admin sets up trips, rounds, formats, pairings and trip info.
+Live scoring and trip hub for golf trips. Players sign in with an emailed code (invited by a texted link), score
+hole by hole, and follow live leaderboards; an organizer sets up trips, rounds, formats, pairings and trip info.
 
 - Build plan: `docs/plan.md` (copy of https://claude.ai/artifact/EjFNgELk12pGAnNS5CpSZu, the master)
 - Wireframes (approved design): https://claude.ai/artifact/CAMT8mmSpgajXZkR5YPbBL
@@ -10,8 +10,8 @@ and follow live leaderboards; an admin sets up trips, rounds, formats, pairings 
 ## Stack
 
 - **Angular** (standalone components, signals) as a **PWA** (`@angular/pwa`), phone-first.
-- **Supabase**: Postgres, Realtime, Auth (anonymous sign-in for players, email sign-in for the organizer),
-  Edge Functions, Storage (course photos). Free tier.
+- **Supabase**: Postgres, Realtime, Auth (email one-time codes for everyone), Edge Functions, Storage (course
+  photos). Free tier.
 - **Cloudflare Worker with static assets** serves the built app (`wrangler.jsonc`). Free tier.
 - **Web Push** (VAPID) sent from a Supabase Edge Function.
 
@@ -19,18 +19,20 @@ and follow live leaderboards; an admin sets up trips, rounds, formats, pairings 
 
 ```
 src/                      Angular app
-  app/player/             login, trip home, scorecard, hole picker, leaderboard, trip info
-  app/admin/              my trips, admin home, trip details, roster, rounds, groups, courses, itinerary, proposals
+  app/auth/               the sign-in form: email, then the 6-digit code
+  app/player/             sign in, invite, You, trip home, scorecard, hole picker, leaderboard, trip info, spectator link
+  app/admin/              all trips, trip creators, overview, trip details, people, rounds, groups, courses, itinerary, proposals
   app/scoring/            pure TypeScript scoring engine, one module per format (no Angular imports)
-  app/core/               supabase client, auth, offline queue, theme
+  app/core/               supabase client, auth (who is signed in), session (which trip is open), offline queue, theme
   app/core/ui/            the design system: every card, button, row, tab bar and sheet (ui-*)
   app/dev/                /dev/ui, every component in every state, light beside dark (not linked anywhere)
   styles/tokens.scss      Theme "Tour" tokens: colors (light and dark), shape, spacing
 supabase/migrations/      SQL schema, RLS policies, functions (one file per change)
-supabase/functions/       edge functions: redeem-code, notify, itinerary-propose
+supabase/functions/       edge functions: invite, spectate, spectator-link, notify
+supabase/templates/       the sign-in emails (a 6-digit code, no link)
 supabase/seed/            Southern Pines 2026 test trip, course library seed list
-supabase/tests/           pgTAP tests (RLS, seed, code login) and edge function tests; CI runs them on every PR
-scripts/                  local DB test runner, one-off course library import (OpenGolfAPI)
+supabase/tests/           pgTAP tests (accounts, seed, the permissions matrix) and end-to-end tests; CI runs them on every PR
+scripts/                  local DB test runner, the accounts-migration test, one-off course library import (OpenGolfAPI)
 docs/                     notes; wireframes live at the link above
 ```
 
@@ -38,8 +40,12 @@ docs/                     notes; wireframes live at the link above
 
 - **Never commit secrets.** The Supabase anon key is public by design; the service-role key, VAPID private
   key and database password never go in the repo. Use `.env` locally and Supabase/Cloudflare secrets.
-- **Security lives in the database.** Every table has RLS. Players read only their own trip and write
-  scores only for their own group; spectators are read-only; only owner/co-admins write trip setup.
+- **Security lives in the database.** Every table has RLS, following the permissions matrix in `docs/plan.md`.
+  Roles: app admin (everything, everywhere), trip creators (may create trips), and on each trip exactly one
+  organizer, co-organizers (everything but deleting, handing off and choosing co-organizers) and players (read
+  their trip, score their own group, suggest itinerary changes). Spectators have no account: a revocable link
+  served by an edge function shows rounds and boards only. The anon role reads no table.
+- **Sign-in is an emailed 6-digit code,** typed in the app, for everyone. Never a link, never a password.
 - **Scores are raw strokes per hole.** Formats (stroke, Stableford, Nassau with presses, Sixes, skins,
   scramble, alt shot, wolf, 9-point, Ryder Cup) are computed from them and never stored as results.
 - **Scoring engine is pure and tested.** Every format has unit tests; the Southern Pines 2026 rerun must
@@ -60,6 +66,9 @@ docs/                     notes; wireframes live at the link above
   supplies. No screen hard-codes Sixes, Nassau or any other format.
 - **Loading:** skeletons hold the layout for content. Spinners only appear inside a button or a sync line, never
   full screen.
+- **Native-app guardrails.** No Safari-only APIs. Every push goes through the one server-side notify function.
+  Complex UI behavior (overlays, sheets, focus, a11y) builds on Angular CDK; ask before adding any other UI
+  dependency.
 - **Browser-first.** Everything works in Safari without installing. "Add to Home Screen" is strongly suggested
   but always skippable.
 
@@ -68,6 +77,9 @@ docs/                     notes; wireframes live at the link above
 - Work on a branch, open a PR into `main`; `main` is protected. Cloudflare deploys on merge.
 - One milestone per session (see the plan's Phase 4 table). Plan first, then code, then tests.
 - Ask before adding a dependency or changing the schema of an existing table.
+- **Who builds what.** Fable: schema, RLS, auth, edge functions, the scoring engine, offline sync, realtime, push.
+  Opus 5.5: screens, restyles, copy, loading states, layout fixes. Opus never touches `supabase/migrations`, RLS,
+  `supabase/functions` or `app/scoring/`.
 
 ## Commands
 
@@ -78,6 +90,7 @@ npm test
 npm run build             # outputs dist/teed/browser
 npx supabase db push      # apply migrations (add --include-seed for the test trip)
 npm run test:db           # RLS + seed tests in a throwaway local Postgres (no Docker needed)
-npx supabase functions deploy redeem-code   # deploy an edge function
+npx supabase functions deploy invite spectate spectator-link   # deploy the edge functions
+scripts/test-accounts-migration.sh   # what migration 0008 does to existing data (throwaway local Postgres)
 npx wrangler deploy       # manual deploy (normally via Cloudflare on merge)
 ```

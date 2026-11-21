@@ -1,6 +1,5 @@
 import { Component, computed, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { displayCode } from '../core/code';
 import { InstallPlatform, InstallService } from '../core/install';
 import { SessionService } from '../core/session';
 import { UiButton, UiCard } from '../core/ui';
@@ -29,11 +28,11 @@ const STEPS: Partial<Record<InstallPlatform, string[]>> = {
 };
 
 /**
- * The Add to Home Screen step, after a join link and from the reminder on trip home. Always
- * skippable. On an iPhone nothing can add the app for you, so there are only the steps, the
- * player's code (the Home Screen app has its own storage and may ask for it) and "Not now", which
- * copies the code on the way out: Safari only allows a copy from a tap. Android gets a real
- * "Install Teed" button when the browser offers its install prompt.
+ * The Add to Home Screen step, after an invite link and from the reminder on trip home. Always
+ * skippable. On an iPhone nothing can add the app for you, so there are only the steps and
+ * "Not now" (the Home Screen app has its own storage: the person signs in there once more, with
+ * a new emailed code). Android gets a real "Install Teed" button when the browser offers its
+ * install prompt.
  */
 @Component({
   selector: 'app-install-step',
@@ -57,13 +56,6 @@ const STEPS: Partial<Record<InstallPlatform, string[]>> = {
         <p class="detail">Leader alerts only work from the Home Screen app.</p>
       </ui-card>
 
-      @if (code(); as c) {
-        <div class="code">
-          <p class="detail">Your code</p>
-          <p class="chars">{{ c }}</p>
-        </div>
-      }
-
       @if (canInstall()) {
         <button ui-button type="button" (click)="installNow()">Install Teed</button>
       }
@@ -82,15 +74,6 @@ const STEPS: Partial<Record<InstallPlatform, string[]>> = {
       aspect-ratio: 16 / 9;
       border-radius: var(--radius-card);
       background: var(--chip);
-    }
-    .code {
-      text-align: center;
-    }
-    .chars {
-      font: 700 44px/1.1 var(--font-heading);
-      letter-spacing: 6px;
-      user-select: all;
-      -webkit-user-select: all;
     }
     ol {
       list-style: none;
@@ -125,10 +108,9 @@ export class InstallStep {
 
   protected readonly name = computed(() => {
     const s = this.sessions.session();
-    return s?.player?.name ?? s?.trip.name ?? '';
+    return s?.player.name ?? '';
   });
   protected readonly steps = computed(() => STEPS[this.install.platform()] ?? []);
-  protected readonly code = computed(() => displayCode(this.sessions.code() ?? ''));
   /** Android only, once the browser has offered its own install prompt. */
   protected readonly canInstall = computed(
     () => this.install.platform() === 'android' && this.install.canPrompt(),
@@ -140,24 +122,11 @@ export class InstallStep {
   }
 
   protected async installNow(): Promise<void> {
-    this.copyCode();
     await this.install.promptInstall();
     await this.router.navigateByUrl('/home');
   }
 
   protected async carryOn(): Promise<void> {
-    this.copyCode();
     await this.router.navigateByUrl('/home');
-  }
-
-  /** Must run straight from the tap. A refusal changes nothing: the texted link still works. */
-  private copyCode(): void {
-    const code = this.sessions.code();
-    if (!code) return;
-    try {
-      void navigator.clipboard?.writeText(code).catch(() => {});
-    } catch {
-      // no clipboard here
-    }
   }
 }

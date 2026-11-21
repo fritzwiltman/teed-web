@@ -9,7 +9,7 @@ import { isPlaceholderIndex } from './opengolf';
   selector: 'app-courses',
   imports: [RouterLink, UiButton, UiCard, UiChip, UiField, UiHeaderBand, UiListRow, UiSkeleton],
   template: `
-    <ui-header-band title="Course library" back="/admin" backLabel="My trips" />
+    <ui-header-band title="Course library" back="/you" backLabel="You" />
     <main class="content">
       <a ui-button routerLink="/admin/courses/add">Add a course</a>
 

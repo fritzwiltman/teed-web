@@ -1,48 +1,68 @@
 import {
+  creatorInviteMessage,
   formatPhone,
   initialsFor,
-  joinLink,
-  linkMessage,
+  inviteLink,
+  inviteMessage,
+  sendText,
   smsLink,
   spectatorMessage,
   tidyPhone,
 } from './sms';
 
-describe('texting a join link', () => {
-  it('writes the message players get', () => {
-    expect(linkMessage('Vero Beach 2027', 'K4M9QT', 'https://teed.example')).toBe(
-      'You’re in for Vero Beach 2027. Tap to open Teed: https://teed.example/join/K4M9QT',
+describe('texting links', () => {
+  it('writes the invite a player gets', () => {
+    expect(inviteMessage('Fritz', 'Vero Beach 2027', 'TOKEN-1', 'https://teed.example')).toBe(
+      'Fritz invited you to Vero Beach 2027 on Teed: https://teed.example/invite/TOKEN-1',
+    );
+    expect(inviteMessage('', 'Vero Beach 2027', 'TOKEN-1', 'https://teed.example')).toBe(
+      "You're invited to Vero Beach 2027 on Teed: https://teed.example/invite/TOKEN-1",
     );
   });
 
-  it('links to the site the organizer has open, so a preview texts preview links', () => {
+  it('writes the invite to plan trips', () => {
+    expect(creatorInviteMessage('Fritz', 'TOKEN-2', 'https://teed.example')).toBe(
+      'Fritz invited you to plan golf trips on Teed: https://teed.example/invite/TOKEN-2',
+    );
+  });
+
+  it('links to the site the sender has open, so a preview texts preview links', () => {
     expect(location.origin).toMatch(/^https?:/);
-    expect(linkMessage('Vero Beach 2027', 'K4M9QT')).toContain(`${location.origin}/join/K4M9QT`);
-    expect(spectatorMessage('Vero Beach 2027', 'W7Q3DX')).toBe(
-      `Follow Vero Beach 2027. Tap to open Teed: ${location.origin}/join/W7Q3DX`,
+    expect(inviteLink('TOKEN-1')).toBe(`${location.origin}/invite/TOKEN-1`);
+    expect(spectatorMessage('Vero Beach 2027', 'SPEC')).toBe(
+      `Follow Vero Beach 2027. Tap to open Teed: ${location.origin}/watch/SPEC`,
     );
   });
 
-  it('puts a code issued in the old style into the link without its dashes', () => {
-    expect(joinLink('pines-fw26-k4m9', 'https://teed.example')).toBe(
-      'https://teed.example/join/PINESFW26K4M9',
-    );
+  it('builds an sms: link with the message, and the number when there is one', () => {
+    const link = smsLink('+17725550101', 'Hello there');
+    expect(link).toBe('sms:+17725550101?&body=Hello%20there');
+    expect(smsLink(null, 'Hello')).toBe('sms:?&body=Hello');
   });
 
-  it('builds an sms: link with the number and the message filled in', () => {
-    const link = smsLink('+17725550101', linkMessage('Vero Beach 2027', 'K4M9QT'));
-    expect(link.startsWith('sms:+17725550101?&body=')).toBe(true);
-    expect(decodeURIComponent(link.split('body=')[1])).toContain('/join/K4M9QT');
+  it('with no number, uses the share sheet, and failing that the clipboard', async () => {
+    const share = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'share', { configurable: true, value: share });
+    expect(await sendText(null, 'Hello')).toBe('opened');
+    expect(share).toHaveBeenCalledWith({ text: 'Hello' });
+
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    expect(await sendText(null, 'Hello')).toBe('copied');
+    expect(writeText).toHaveBeenCalledWith('Hello');
+
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: vi.fn(async () => Promise.reject(new Error('AbortError'))),
+    });
+    expect(await sendText(null, 'Hello')).toBe('cancelled');
   });
 
   it('accepts phone numbers however they are typed', () => {
     expect(tidyPhone('(772) 555-0101')).toBe('+17725550101');
     expect(tidyPhone('1 772 555 0101')).toBe('+17725550101');
     expect(tidyPhone('+44 20 7946 0958')).toBe('+442079460958');
-  });
-
-  it('refuses things that are not phone numbers', () => {
-    expect(tidyPhone('call me')).toBeNull();
     expect(tidyPhone('555-0101')).toBeNull();
     expect(tidyPhone('')).toBeNull();
   });

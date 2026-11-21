@@ -8,7 +8,8 @@ create role service_role nologin bypassrls;
 create schema auth;
 create table auth.users (
   id           uuid primary key default gen_random_uuid(),
-  email        text,
+  email        text unique,
+  email_confirmed_at timestamptz,
   is_anonymous boolean not null default false,
   created_at   timestamptz not null default now()
 );

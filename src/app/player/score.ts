@@ -11,11 +11,7 @@ import { PlayerHeader } from './player-header';
     <app-player-header [label]="session()?.trip?.name" title="Scorecard" />
     <main class="content">
       <ui-card pad>
-        @if (session()?.role === 'spectator') {
-          <p>Spectators can't enter scores. Follow along on the Board.</p>
-        } @else {
-          <p>Hole-by-hole scoring for your group will be here.</p>
-        }
+        <p>Hole-by-hole scoring for your group will be here.</p>
       </ui-card>
     </main>
   `,

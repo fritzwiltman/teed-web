@@ -1,7 +1,8 @@
-import { Component, computed, effect, inject } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
+import { AuthService } from '../core/auth';
 import { SessionService } from '../core/session';
 import { Tab, UiTabBar } from '../core/ui';
 
@@ -12,7 +13,7 @@ const TABS: Tab[] = [
   { key: 'trip', label: 'Trip', icon: 'trip', link: '/trip' },
 ];
 
-/** The logged-in frame: the current page over the docked tab bar. */
+/** A trip's frame: the current page over the docked tab bar. */
 @Component({
   selector: 'app-shell',
   imports: [RouterOutlet, UiTabBar],
@@ -22,13 +23,11 @@ const TABS: Tab[] = [
   `,
 })
 export class Shell {
+  private readonly auth = inject(AuthService);
   private readonly sessions = inject(SessionService);
   private readonly router = inject(Router);
 
-  /** Spectators have no scorecard. */
-  protected readonly tabs = computed(() =>
-    this.sessions.session()?.role === 'spectator' ? TABS.filter((t) => t.key !== 'score') : TABS,
-  );
+  protected readonly tabs = signal(TABS);
 
   private readonly url = toSignal(
     this.router.events.pipe(
@@ -43,10 +42,10 @@ export class Shell {
   });
 
   constructor() {
-    // Logged out (by choice, or because the code was revoked): back to login, or for the owner
-    // leaving player mode, back to their trips.
+    // The trip was closed (back to You), the person was taken off it, or they signed out.
     effect(() => {
-      if (!this.sessions.session()) void this.router.navigateByUrl(this.sessions.exitUrl());
+      if (!this.sessions.session())
+        void this.router.navigateByUrl(this.auth.me() ? '/you' : '/login');
     });
   }
 }

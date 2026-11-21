@@ -16,49 +16,27 @@
 npx supabase db push --include-seed     # migrations, then the seed
 ```
 
-The trip is seeded as `final` (it's over): codes don't log in and scoring is closed.
-
-Login codes are generated at random when the seed runs and are never committed (the repo is public).
+The trip is seeded as `final` (it's over): it is readable but scoring is closed. Fritz is its organizer. Nobody
+in the seed is linked to an account and there are no emails in it (the repo is public).
 
 ## Testing with the PINES trip
 
-Codes only work on a live trip. In the Supabase SQL editor:
+On a database where the trip was seeded fresh (a local stack), put yourself on it after signing in once. In the
+SQL editor, with the address you signed in with:
 
 ```sql
--- 1. Open the trip for testing
+-- 1. Take the organizer's seat (the email claims it; a made-up local address is fine)
+update trip_members set email = 'admin@teed.test'
+ where role = 'organizer' and trip_id = (select id from trips where slug = 'PINES');
+
+-- 2. Open the trip for scoring
 update trips set status = 'live' where slug = 'PINES';
 
--- 2. Read the codes
-select p.name, c.code
-from player_codes c join players p on p.id = c.player_id join trips t on t.id = p.trip_id
-where t.slug = 'PINES' order by p.sort_order;
-
--- 3. When you're done: close it again. Phones stay logged in (read-only); the delete signs them all out too.
+-- 3. When you're done: close it again
 update trips set status = 'final' where slug = 'PINES';
-delete from trip_sessions where trip_id = (select id from trips where slug = 'PINES');
 ```
 
-Other things worth trying:
+In production the trip already exists and the M3.6 migration linked its organizer to the owner's account.
+Other people join the way they would any trip: People → Text invite.
 
-```sql
--- A spectator code
-insert into spectator_codes (trip_id, code) select id, 'PINES-WATCH-7Q3D' from trips where slug = 'PINES';
-
--- Regenerate one player's code (the old one stops working and their phones are signed out)
-update player_codes set code = private.new_login_code()
-where player_id = (select p.id from players p join trips t on t.id = p.trip_id where t.slug = 'PINES' and p.name = 'Von')
-returning code;
-
--- Locked out after too many wrong codes? Clear the lockouts.
-delete from private.redeem_lockouts;
-```
-
-## Making yourself the app admin
-
-Creating trips and editing the course library is limited to users listed in `app_admins`. After signing in once
-with your email magic link, run this in the SQL editor with your address:
-
-```sql
-insert into app_admins (user_id) select id from auth.users where email = 'you@example.com';
-update trips set owner_id = (select user_id from app_admins limit 1) where owner_id is null;
-```
+Local sign-in emails land in the mail catcher (http://127.0.0.1:54324); see `docs/setup-auth.md`.

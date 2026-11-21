@@ -1,15 +1,15 @@
 # Teed — Build Plan
 
 Markdown copy of the build plan (source: https://claude.ai/artifact/EjFNgELk12pGAnNS5CpSZu), exported Nov 18, 2026, then
-updated in the repo for the M1 schema, M2 login, and the Nov 19 design review (M3.5) as built. The claude.ai doc
-is the master: sync it from the Design review, Schema and Login sections here. Wireframes: https://claude.ai/artifact/CAMT8mmSpgajXZkR5YPbBL
+updated in the repo for the M1 schema, the Nov 19 design review (M3.5) and accounts and roles (M3.6) as built. The claude.ai doc
+is the master: sync it from the Design review, Schema, Sign-in and Permissions sections here. Wireframes: https://claude.ai/artifact/CAMT8mmSpgajXZkR5YPbBL
 
 Current setup: repo `fritzwiltman/teed-web`, Cloudflare Worker `teed` at https://teed.fgwilt1.workers.dev,
 Supabase project `https://mhfuxacwpzzthethgfcp.supabase.co`.
 
 ## Overview
 
-A free, reusable live-scoring web app for golf trips: players log in from a texted link (a personal code), enter scores hole by hole
+A free, reusable live-scoring web app for golf trips: players sign in with an emailed code (invited by a texted link), enter scores hole by hole
 for themselves or their foursome, and watch a live leaderboard with push alerts. One deployment serves every trip;
 a new trip is a few minutes of admin setup, not a new app.
 
@@ -25,12 +25,13 @@ Principles:
 
 - **Design before code.** Build from the approved wireframes.
 - **Offline first on the course.** Scores save on the phone and sync when signal returns.
-- **One app, many trips.** Every record belongs to a trip; codes only open their own trip.
+- **One app, many trips.** Every record belongs to a trip; you see only the trips you are on.
 - **Small, reviewable steps.** One milestone per session, each ending in a working deploy.
 
 ## Design review decisions (Nov 19)
 
 The wireframes' Player, Organizer and Design system pages are the spec. Where this plan and the wireframes disagree, the wireframes win.
+M3.6 replaced the codes below with accounts and "co-admins" with co-organizers: see "Sign-in, accounts and roles" in Phase 2.
 
 - **Theme:**
   - Tour, light and dark from the phone's setting.
@@ -89,7 +90,7 @@ The wireframes' Player, Organizer and Design system pages are the spec. Where th
 Written before the design review. Where a screen below disagrees with the decisions above, the decisions win.
 
 
-1. **Login:** one field for the player or spectator code (e.g. `VERO-FW27-K4M9`), big "Join trip" button. "Add to Home
+1. **Login:** (superseded by M3.6: sign in with an emailed 6-digit code.) Was: one field for the player or spectator code, big "Join trip" button. "Add to Home
    Screen" hint on first visit with browser-specific steps (iPhone Safari/Chrome: Share → Add to Home Screen, with a
    short looping GIF; Android Chrome: one-tap Install). Hidden once launched from the home screen.
 2. **Trip home:** course photo, today's round (time, format, tees, course, group), big "Continue scoring · Hole N",
@@ -123,74 +124,127 @@ Written before the design review. Where a screen below disagrees with the decisi
 ## Phase 2: Supabase
 
 Free tier: 500 MB database, 2 active projects, projects pause after 1 week of inactivity. Done so far: project
-created (US East), Data API on, RLS on new tables automatically, anonymous sign-ins on, email on (admin magic link),
+created (US East), Data API on, RLS on new tables automatically, email sign-in with one-time codes (anonymous
+sign-ins off since M3.6; setup steps in `docs/setup-auth.md`),
 `ping()` function, keep-alive GitHub Action (every 3 days) verified.
 
-**Schema** (as built in `supabase/migrations`; helper functions and rate-limit tables live in a `private` schema
-the Data API doesn't expose)
+**Schema** (as built in `supabase/migrations`; helper functions live in a `private` schema the Data API doesn't
+expose)
 
 | Table | Key columns |
 | --- | --- |
-| `app_admins` | user id. Who may create trips and edit the course library (email sign-up is open, so it's an explicit list) |
-| `trips` | owner, name, slug (an internal handle made from the name; no longer part of codes), dates, status (draft/live/final), theme, house rules (handicap allowance, strokes off low man, pick-up at net double, spectators see money, handicap lock date), banker, owner's player ("This is me") |
-| `players` | trip, name, initials, role (player/co-admin), handicap index, index entered/locked at. No codes or GHIN numbers here: everyone on the trip can read this table |
-| `player_codes` | player, code, issued at. Trip admins only |
-| `player_ghin` | player, GHIN number. Players and admins, never spectators |
-| `player_contacts` | player, mobile number (for texting their join link). Owner only |
-| `spectator_codes` | trip, code, label, enabled. Trip admins only |
-| `trip_sessions` | auth user, trip, player **or** spectator code. Written only by `redeem-code`. One player can have several (Safari and the home-screen app are separate anonymous users) |
+| `profiles` | one per signed-in person: display name, email (follows the verified sign-in email), current handicap index, `is_admin` (set by SQL only) |
+| `trip_creators` | who may create trips, besides the app admin: name, phone, the profile once their invite is claimed. App admin only |
+| `trips` | name, slug (an internal handle made from the name), dates, status (draft/live/final), theme, house rules (handicap allowance, strokes off low man, pick-up at net double, spectators see winnings, handicap lock date), banker, buy-in amount, reopened at |
+| `trip_members` | (was `players`) trip, name, initials, role (organizer/co-organizer/player), profile (null until the invite is claimed), email as entered, invite token hash, the trip's own handicap index and when it locked, buy-in paid. Exactly one organizer per trip. Clients read only the roster columns; email and invite state come through `trip_roster()` to the organizer and co-organizers |
+| `player_ghin` | member, GHIN number |
+| `member_contacts` | member, mobile number (for texting their invite). Organizer and co-organizers |
+| `spectator_links` | trip, nonce, token hash. No client access: the edge functions derive the link from a server secret and the nonce |
 | `courses` | name, short name, location, architect, year, description, links, photo, source + ratings_checked_at |
 | `tees` | course, name, yards, rating, slope; par, stroke index and yards per hole (arrays) |
 | `rounds` | trip, number, course, tee, date, tee time, status (scheduled/live/final), pairings TBD flag, drive note |
 | `round_formats` | round, format key, settings (stakes, presses, carryover, pot split, Sixes rotation) |
-| `groups` / `group_players` | round, number, tee time; player with position, team (A/B) and optional GHIN course/playing handicap overrides (GHIN applies the allowance to the unrounded course handicap, so computing it can be off by one) |
-| `scores` | round, player, hole, strokes, entered by (user and player), timestamps; primary key round + player + hole |
-| `score_history` | every insert, update and delete of a score, with the previous value |
+| `groups` / `group_players` | round, number, tee time; member (`player_id`) with position, team (A/B) and optional GHIN course/playing handicap overrides (GHIN applies the allowance to the unrounded course handicap, so computing it can be off by one) |
+| `scores` | round, player, hole, strokes, entered by (user and member), timestamps; primary key round + player + hole |
+| `score_history` | every insert, update and delete of a score by anyone: who, when, old and new value |
 | `presses` | round format, group, bet (`front`/`back`/`overall`, `m1`–`m3`), after hole. Entered by players mid-round, like scores |
 | `itinerary_items` | trip, day, time, type (lodging, meal, activity, tv, travel, cost, note), title, details per type, optional player |
 | `tasks` / `task_status` | trip checklist (with a "players can tick this themselves" flag) and per-player status |
-| `itinerary_proposals` | trip, payload, source, status (pending/approved/rejected) |
+| `itinerary_proposals` | trip, payload, source, status (pending/approved/rejected), proposed by |
+| `alerts` | trip, level (announcement/important/urgent), text, sender. Who may send and read; delivery is M7 |
 | `push_subscriptions` | auth user, trip, endpoint, keys |
 
-**Login and security**
+Columns in other tables keep the name `player_id`: they point at a `trip_members` row.
 
-- Players and spectators: the phone signs in anonymously, then edge function `redeem-code` links that session to
-  a player (or a read-only spectator) on a **live** trip and returns the trip and player. The link is a
-  `trip_sessions` row; the app also caches it so it opens with no signal.
-- Codes: 6 random characters (`K4M9QT`, no I/O/0/1), unique across every trip and across player and spectator
-  codes; typed or pasted in any case. Stored as `K4M-9QT` (the code columns require a dash); the dash is not
-  part of the code and is never shown or needed. Codes issued before M3.5 (`PINES-FW26-K4M9`) keep working. Regenerating or
-  revoking a code signs out every phone that used it.
-- Join link: the organizer texts each player `<site>/join/<code>`, built from the site the organizer has open (so
-  a preview texts preview links). Opening it logs the phone in and goes to the skippable "Add to Home Screen"
-  step: three steps, the code in large type and "Not now", which copies the code so the Home Screen app (separate
-  storage) logs in with "Paste my code"; six boxes take it by hand. Android also gets "Install Teed" (the system
-  install prompt). There is no other login form for players.
-- Rate limit on failed codes: 5 a minute per device, 30 a minute per IP (looser, since a group shares one Wi-Fi
-  address), then a 5-minute lockout.
-- Owner (Fritz): email sign-in, listed in `app_admins`. Owner-only: creating and deleting trips, the course
-  library, login codes, phone numbers, deleting players or rounds.
-- "This is me" (`trips.owner_player_id`) links the owner's player to their organizer account: on that sign-in,
-  RLS treats the trip's owner as that player (their group's scores, check-in, checklist), so one email session
-  serves both the player and the organizer screens and the owner never redeems a code. Only the trip's own owner
-  gets this, only they can set it, and it gives no one else anything. Without it, a trip opens in organizer mode.
-- Mode switch: the owner and co-admins see "Manage" on player screens and "Player view" on organizer screens
-  (hidden while the trip is a draft). From My trips a draft opens in organizer mode, a live trip in player mode.
-- Organizer sign-in is separate from the player login on the same phone (its own stored session): email and
-  password, with "Email me a link instead" as the second option (a link opens in Safari, never in the installed
-  app, so the password is the way in there). The password is set from My trips. No new accounts are created
-  from the sign-in screen.
-- Co-admins: any player, per trip, using the organizer screens on their code login: pairings, score fixes,
-  rounds, itinerary and trip info. The screens hide what the database denies them (codes, links, phone numbers,
-  adding or deleting players, the course library).
-- RLS everywhere: players read only their trip (once it is live or final) and write scores and presses only for
-  their group while the trip is live and the round isn't final; spectators read-only and never see GHIN numbers,
-  codes or the checklist; only owner/co-admins write setup. Handicap check-in goes through `submit_handicap()`.
-- Spectators and money: `spectators_see_money` (off by default) hides itinerary cost lines. TODO: stakes in
-  `round_formats.settings` are still readable by spectators; hiding payouts fully needs a separate stakes table.
+**Sign-in, accounts and roles** (M3.6)
 
-**Roster:** admin adds players (no self sign-up); can edit names/handicaps any time; replacing a player revokes the
-old code, issues a new one, and keeps the slot's tee times, group and team.
+- **Sign-in:** everyone signs in the same way: type your email, get a 6-digit code by email, type it into six
+  boxes. No links (they open in Safari, never in the Home Screen app), no passwords, no anonymous sign-in. A new
+  address gets an account when its code is verified. Sessions persist; signing out returns to Sign in. The email
+  templates (code, no link) are in `supabase/templates/`; dashboard steps in `docs/setup-auth.md`.
+- **Roles on a trip:** exactly one **organizer** (enforced in the database), **co-organizers**, **players**. The
+  organizer can't be removed or demoted except by handing the trip to another member who has signed in
+  (`hand_off_trip()`, one transaction; they stay on as a co-organizer). App-wide: the **app admin**
+  (`profiles.is_admin`, set by SQL only) can do everything on every trip; **trip creators** may create trips.
+  Creating a trip makes the creator its organizer.
+- **Invites:** the organizer or a co-organizer adds a person with a name and optional email, then texts an invite
+  link from their own phone (`<site>/invite/<token>`; the token is single-use and stored only as a hash). The link
+  shows "Fritz invited you to <trip>" and the email field, filled in if known. After the code is verified the
+  membership is claimed: by the token, or with no token by a matching email. One person, one membership per trip.
+  Resending makes a new link and stops the old one.
+- **Trip creator invite:** the app admin adds a name and phone on Trip creators and texts a link ("Fritz invited
+  you to plan golf trips on Teed"); signing in from it makes that profile a trip creator.
+- **Handicap index:** the profile holds the current index; a player edits their own, and the organizer and
+  co-organizers can edit any member's. Each trip has a lock date (default: 7 days before the first round). Until
+  then a member's trip index follows their profile; from then on it is the trip's own copy, and changing a
+  profile never changes a locked or final trip. The organizer and co-organizers can still edit the trip's copy.
+  Someone who joins after the lock gets their current index copied on joining. No scheduled job: before a
+  profile's index changes, the database first locks that person's trips that are due.
+- **Trip lifecycle:** Draft, Upcoming, In progress, Final. Players see a trip once it is published. A trip becomes
+  Final on its own once every round is final and its last day has passed (noon UTC the day after); the organizer
+  or a co-organizer can reopen it, and finalizing a round again re-arms it.
+- **Spectator link:** `<site>/watch/<token>`, no account. A revocable token per trip, derived from a server secret
+  (`SPECTATOR_LINK_SECRET`) and a per-trip nonce, so the database holds only the nonce and a hash. The `spectate`
+  edge function returns rounds, groups, scores and presses (what the boards are worked out from), and the money
+  settings only when "Spectators see winnings" is on. No itinerary, people list, emails or buy-ins. The anon role
+  has no access to any table.
+- **Edge functions:** `invite` (what an invite link shows before sign-in), `spectate`, `spectator-link` (anyone on
+  the trip gets the link to share; the organizer, co-organizers and app admin create or reset it).
+- **Read model for the You page:** `my_trips()` (every trip I am on: status, dates, player count, my role, and a
+  bucket of next / upcoming / past; finish and winnings are null until the scoring engine exists), `me()` (my
+  profile with `is_admin` and `is_trip_creator`), `trip_roster()` (the people on a trip; the "!" flags, from the
+  data, only for the organizer, co-organizers and app admin). The app starts at the Home of a trip in progress,
+  otherwise at You.
+- **Native-app guardrails:** no Safari-only APIs; every push goes through the one server-side notify function;
+  sign-in stays email codes; complex UI behavior builds on Angular CDK.
+
+**Who can do what** (enforced in RLS and the edge functions; `supabase/tests/03_permissions.test.sql` has one
+check per row and role)
+
+✓ = allowed, — = not. "Admin" is the app admin, who can do everything on every trip, including trips they aren't on.
+
+| Capability | Admin | Organizer | Co-organizer | Player | Spectator link |
+|---|---|---|---|---|---|
+| Sign in with an email code | ✓ | ✓ | ✓ | ✓ | — (no account) |
+| Edit own name, email, handicap index | ✓ | ✓ | ✓ | ✓ | — |
+| Create a trip | ✓ | trip creators only | trip creators only | trip creators only | — |
+| Manage the Trip creators list | ✓ | — | — | — | — |
+| Open any trip, even one they're not on | ✓ | — | — | — | — |
+| See itinerary, stay, trip details, people | ✓ | ✓ | ✓ | ✓ | — |
+| Edit trip details, stay, house rules, handicap defaults | ✓ | ✓ | ✓ | — | — |
+| Publish the trip | ✓ | ✓ | ✓ | — | — |
+| Delete the trip | ✓ | ✓ | — | — | — |
+| Hand the trip to a new organizer | ✓ | ✓ | — | — | — |
+| Add or remove co-organizers | ✓ | ✓ | — | — | — |
+| Add or remove players; send or resend invites | ✓ | ✓ | ✓ | — | — |
+| Change a member's trip handicap (before or after the lock) | ✓ | ✓ | ✓ | — | — |
+| Create or reset the spectator link | ✓ | ✓ | ✓ | — | — |
+| Share the spectator link | ✓ | ✓ | ✓ | ✓ | — |
+| Edit the itinerary | ✓ | ✓ | ✓ | — | — |
+| Suggest an itinerary change | — | — | — | ✓ | — |
+| Approve or reject suggestions | ✓ | ✓ | ✓ | — | — |
+| Create, edit or delete rounds, formats, groups, teams | ✓ | ✓ | ✓ | — | — |
+| Enter scores for their own group | ✓ | ✓ | ✓ | ✓ | — |
+| Enter or fix scores for any group (kept in history) | ✓ | ✓ | ✓ | — | — |
+| Finalize or reopen a round; Didn't finish; end early | ✓ | ✓ | ✓ | — | — |
+| See scores, scorecards and leaderboards | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Set the buy-in amount; mark buy-ins paid | ✓ | ✓ | ✓ | — | — |
+| See buy-ins, paid status, winnings | ✓ | ✓ | ✓ | ✓ | winnings only if "Spectators see winnings" is on |
+| Send alerts | ✓ | ✓ | ✓ | — | — |
+| Get push notifications | trips they're on | ✓ | ✓ | ✓ | — |
+| See the organizer "!" flags on People | ✓ | ✓ | ✓ | — | — |
+
+The course library is not in the matrix: trip creators (and the app admin) add and edit courses; only the app
+admin deletes one.
+
+**Who builds what**
+
+- **Fable:** schema, RLS, auth, edge functions, the scoring engine, offline sync, realtime, push.
+- **Opus 5.5:** screens, restyles, copy, loading states, layout fixes. Opus never touches migrations, RLS,
+  functions or `app/scoring/`.
+
+**People:** the organizer and co-organizers add players and text their invites; names and handicaps can be edited
+any time; removing a player takes them out of every group.
 
 **Groups, teams, late pairings:** presets Balance by handicap, Shuffle, Same as previous round, Seed from standings
 (after a chosen round, by money/points/net); then tap two names to swap. Pairings can stay TBD. Groups lock when the
@@ -201,7 +255,7 @@ straight from the admin screen (no edge function needed) with tees, rating, slop
 ratings import as separate tees ("White (W)"); Refresh re-pulls and flags changes; trip courses re-checked ~2 weeks out; spot-check against the
 USGA Course Rating and Slope Database before the handicap lock. Photos in Supabase Storage.
 
-**Handicaps:** GHIN has no public API; players enter index in check-in, admin spot-checks. Course handicap =
+**Handicaps:** GHIN has no public API; players keep their index on their profile, the organizer spot-checks. Course handicap =
 index × slope ÷ 113 + (rating − par), then the format allowance (e.g. 90%), optionally off the low man.
 
 **Trip info editing:** typed itinerary items feed the right views; rounds come from round setup. Itinerary editor
@@ -225,13 +279,14 @@ The URL is locked: home-screen installs are tied to it.
 | M2 | Code login (`redeem-code` + login screen) | A test code logs in on an iPhone and lands on trip home |
 | M3 | Admin: trips, roster, courses (+ seed list import), rounds, groups, code generator | A full trip set up without SQL |
 | M3.5 | Design system: Tour tokens, shared components in `app/core/ui`, `/dev/ui`; existing screens restyled; 6-character codes and join links; logo and icons; owner plays on the organizer sign-in | `/dev/ui` is right in light and dark on an iPhone; a texted link logs straight in; "Paste my code" works in the Home Screen app |
+| M3.6 | Accounts, roles and permissions: email-code sign-in, profiles, trip members with roles, invites, trip creators, handicap lock, spectator link, the permissions matrix in RLS. Screens on top of it (You, edit in place, spectator) follow from Opus | The "friend organizes" flow works end to end; every matrix test passes in CI |
 | M4 | Scorecard for the foursome | Scores save per hole; teammates see edits |
 | M5 | Offline queue | Airplane-mode scores sync with no duplicates |
 | M6 | Live round and trip leaderboards (gross and net) | Two phones update within seconds |
 | M7 | Push notifications | See Phase 5 |
 | M8 | Polish: icons, splash, install hint, dark mode | Installs cleanly from Safari |
 
-Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; codes out by Jan 6; trip ~Jan 11–15 (Vero Beach, 4 players).
+Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip ~Jan 11–15 (Vero Beach, 4 players).
 
 **Formats as plug-ins:** each format = settings + pure scoring function over raw hole strokes + rules text.
 
@@ -262,7 +317,7 @@ new leader (only after every group is through 2 holes, judged on score to par); 
 ## Phase 6: Testing and trip readiness
 
 - [ ] Install from Safari on two iPhones and one Android
-- [ ] Log in with codes after installing (home-screen storage is separate)
+- [ ] Sign in again with an emailed code after installing (home-screen storage is separate)
 - [ ] Full 18 for a foursome, including fixing someone else's score
 - [ ] Airplane mode for three holes, then confirm sync
 - [ ] Two phones watch the leaderboard live
@@ -306,6 +361,12 @@ Decided in the Nov 19 design review:
 - [x] Theme: Tour, light and dark from the phone's setting (was Theme A "Scorecard").
 - [x] Code format: 6 random characters, sent as a texted join link (was `VERO-FW27-K4M9`, typed in).
 - [x] Owner as a player: "This is me" plus the organizer sign-in; no second session (was: display only).
+
+Decided for M3.6:
+
+- [x] Sign-in: emailed one-time codes for everyone; player codes, anonymous sign-in and "This is me" are gone.
+- [x] Roles: one organizer per trip, co-organizers, players; an app admin and trip creators app-wide.
+- [x] Spectators: a revocable link with no account; winnings only when the trip says so.
 
 Still open:
 
