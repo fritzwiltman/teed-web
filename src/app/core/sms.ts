@@ -5,14 +5,14 @@ export function inviteLink(token: string, url: string = location.origin): string
   return `${url}/invite/${encodeURIComponent(token)}`;
 }
 
-/** The text a player gets: "Fritz invited you to Vero Beach 2027 on Teed: <link>". */
+/** The text a player gets: "Fritz added you to Vero Beach 2027 on Teed. Tap to join: <link>". */
 export function inviteMessage(
   inviter: string,
   trip: string,
   token: string,
   url: string = location.origin,
 ): string {
-  return `${inviter ? inviter + ' invited you' : "You're invited"} to ${trip} on Teed: ${inviteLink(token, url)}`;
+  return `${inviter ? inviter + ' added you' : "You've been added"} to ${trip} on Teed. Tap to join: ${inviteLink(token, url)}`;
 }
 
 /** The text someone gets who may now create trips. */

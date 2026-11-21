@@ -20,10 +20,18 @@ export type InvitePreview =
     }
   | { kind: 'creator'; inviter: string | null; name: string };
 
+/** Shown once the invite is taken up: "You're in", and the way on to the trip. */
+interface Joined {
+  next: string;
+  label: string;
+  /** The trip's name, when a player can't open it yet because it isn't published. */
+  waiting?: string;
+}
+
 /**
  * The texted invite link: "Fritz invited you to Southern Pines 2026", the email field (filled in
  * if the organizer knew it), then the code. Once signed in, the invite is claimed: the person is
- * on the trip, or may now create trips.
+ * on the trip ("You're in", then its Home), or may now create trips.
  */
 @Component({
   selector: 'app-invite',
@@ -34,6 +42,14 @@ export type InvitePreview =
       @if (problem(); as text) {
         <p class="error-text" role="alert">{{ text }}</p>
         <a ui-button variant="outline" routerLink="/">Open Teed</a>
+      } @else if (joined(); as j) {
+        <div>
+          <h1>You're in{{ auth.me()?.display_name ? ', ' + auth.me()?.display_name : '' }}</h1>
+          @if (j.waiting) {
+            <p class="facts">{{ j.waiting }} opens once it's published.</p>
+          }
+        </div>
+        <a ui-button [routerLink]="j.next">{{ j.label }}</a>
       } @else if (preview(); as p) {
         @if (auth.me(); as me) {
           <ng-container *ngTemplateOutlet="heading" />
@@ -101,6 +117,7 @@ export class Invite {
   protected readonly preview = signal<InvitePreview | null>(null);
   protected readonly problem = signal<string | null>(null);
   protected readonly busy = signal(false);
+  protected readonly joined = signal<Joined | null>(null);
 
   constructor() {
     effect(() => void this.load(this.token()));
@@ -137,28 +154,38 @@ export class Invite {
     try {
       const { data, error } = await this.supabase.rpc('claim_invite', { p_token: this.token() });
       const result = data as { status: string; kind?: string; trip_id?: string } | null;
-      if (error || !result || result.status === 'invalid') {
+      // 'ok' also when this person already holds the spot: their email claimed it as the code
+      // was verified, or they opened their own link again. Only someone else's link is "used".
+      if (error || !result || !['ok', 'already_on_trip'].includes(result.status)) {
         this.problem.set('This invite link has been used or replaced. Ask for a new one.');
         return;
       }
       await this.auth.refresh(); // a new trip creator, or a name taken from the invite
       await this.sessions.loadTrips();
-      // A player waits for the trip to be published before it opens; until then, You.
-      if (result.trip_id && (await this.openable(result.trip_id))) {
-        const installable = !['standalone', 'other'].includes(this.install.platform());
-        await this.router.navigateByUrl(installable ? '/install' : '/home');
-      } else {
+      if (!result.trip_id) {
         await this.router.navigateByUrl('/you');
+        return;
+      }
+      const mine = this.sessions.trips().find((t) => t.id === result.trip_id);
+      if (!mine) {
+        // A player can't see a trip until it is published.
+        const preview = this.preview();
+        const waiting = preview?.kind === 'trip' ? preview.trip.name : 'Your trip';
+        this.joined.set({ next: '/you', label: 'Continue', waiting });
+      } else if (mine.stage === 'draft') {
+        // A co-organizer's draft opens where it is set up.
+        this.joined.set({ next: `/admin/trips/${mine.id}`, label: `Open ${mine.name}` });
+      } else if (!(await this.sessions.open(mine.id))) {
+        this.joined.set({ next: '/you', label: 'Continue' });
+      } else if (['standalone', 'other'].includes(this.install.platform())) {
+        this.joined.set({ next: '/home', label: `Open ${mine.name}` });
+      } else {
+        await this.router.navigateByUrl('/install'); // "You're in", Add to Home Screen, then Home
       }
     } catch {
       this.problem.set("Can't reach Teed. Check your signal and try again.");
     } finally {
       this.busy.set(false);
     }
-  }
-
-  private async openable(tripId: string): Promise<boolean> {
-    const mine = this.sessions.trips().find((t) => t.id === tripId);
-    return !!mine && mine.stage !== 'draft' && (await this.sessions.open(tripId));
   }
 }

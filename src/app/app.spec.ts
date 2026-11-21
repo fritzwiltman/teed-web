@@ -640,18 +640,71 @@ describe('App', () => {
       expect(el.querySelector('ui-tab-bar')).toBeNull();
     });
 
-    it("with nothing to install, goes to the trip's Home", async () => {
-      const { router, signIn } = await boot('/invite/TOKEN-1', null, {
+    it('on an iPhone, "Not now" on that step opens the trip\'s Home, never You', async () => {
+      const { router, signIn, click, session } = await boot('/invite/TOKEN-1', null, {
         me: null,
         functions: { invite: TRIP_INVITE },
         claim: joined,
+        signsInAs: VON,
+        trips: [mine({})],
+        platform: 'ios-safari',
+      });
+      await signIn(null);
+      await click('Not now');
+      expect(router.url).toBe('/home');
+      expect(session()?.trip.id).toBe('t1');
+    });
+
+    it('with nothing to install, says "You\'re in" and then opens the trip\'s Home', async () => {
+      const { router, el, signIn, click, session } = await boot('/invite/TOKEN-1', null, {
+        me: null,
+        functions: { invite: TRIP_INVITE },
+        claim: joined,
+        signsInAs: VON,
         trips: [mine({})],
       });
       await signIn(null);
+      expect(router.url).toBe('/invite/TOKEN-1');
+      expect(el.querySelector('h1')?.textContent).toBe("You're in, Von");
+      expect(el.querySelector('[role=alert]')).toBeNull();
+      await click('Open Southern Pines 2026');
       expect(router.url).toBe('/home');
+      expect(session()?.trip.id).toBe('t1');
     });
 
-    it('goes to You while the trip is still a draft (a co-organizer) or not visible yet (a player)', async () => {
+    it('counts it as joined when the email already claimed the spot, or the link is opened again', async () => {
+      // The organizer entered Von's email: verifying the code put him on the trip, and the
+      // link then finds him already there.
+      for (const claim of [joined, { status: 'already_on_trip', trip_id: 't1' }]) {
+        const { el, signIn, click, router } = await boot('/invite/TOKEN-1', null, {
+          me: null,
+          functions: { invite: TRIP_INVITE },
+          claim,
+          signsInAs: VON,
+          trips: [mine({})],
+        });
+        await signIn(null);
+        expect(el.querySelector('[role=alert]')).toBeNull();
+        expect(el.querySelector('h1')?.textContent).toBe("You're in, Von");
+        await click('Open Southern Pines 2026');
+        expect(router.url).toBe('/home');
+        TestBed.resetTestingModule();
+      }
+    });
+
+    it('says the link is used only when someone else took it up', async () => {
+      const { el, signIn, router } = await boot('/invite/TOKEN-1', null, {
+        me: null,
+        functions: { invite: TRIP_INVITE },
+        claim: { status: 'used' },
+      });
+      await signIn(null);
+      expect(el.querySelector('[role=alert]')?.textContent).toContain('used or replaced');
+      expect(el.querySelector('h1')).toBeNull();
+      expect(router.url).toBe('/invite/TOKEN-1');
+    });
+
+    it('a draft: a co-organizer goes on to set it up; a player is told it opens once published', async () => {
       const draft = await boot('/invite/TOKEN-1', null, {
         me: null,
         functions: { invite: TRIP_INVITE },
@@ -659,7 +712,12 @@ describe('App', () => {
         trips: [mine({ stage: 'draft', status: 'draft', role: 'co_organizer' })],
       });
       await draft.signIn(null);
-      expect(draft.router.url).toBe('/you');
+      expect(draft.el.querySelector('h1')?.textContent).toBe("You're in, Fritz");
+      expect(
+        [...draft.el.querySelectorAll('a')]
+          .find((a) => a.textContent?.trim() === 'Open Southern Pines 2026')
+          ?.getAttribute('href'),
+      ).toBe('/admin/trips/t1');
       TestBed.resetTestingModule();
       const hidden = await boot('/invite/TOKEN-1', null, {
         me: null,
@@ -668,6 +726,11 @@ describe('App', () => {
         trips: [],
       });
       await hidden.signIn(null);
+      expect(hidden.el.querySelector('h1')?.textContent).toBe("You're in, Fritz");
+      expect(hidden.el.querySelector('.facts')?.textContent).toBe(
+        "Southern Pines 2026 opens once it's published.",
+      );
+      await hidden.click('Continue');
       expect(hidden.router.url).toBe('/you');
     });
 
@@ -695,6 +758,8 @@ describe('App', () => {
       expect(el.querySelector('input[name=email]')).toBeNull();
       await click('Continue as Fritz');
       expect(rpc).toHaveBeenCalledWith('claim_invite', { p_token: 'TOKEN-1' });
+      expect(el.querySelector('h1')?.textContent).toBe("You're in, Fritz");
+      await click('Open Southern Pines 2026');
       expect(router.url).toBe('/home');
     });
 

@@ -112,8 +112,13 @@ select is(public.claim_invite((select r ->> 'token' from creator_invite)), '{"st
           'signing in from the link makes Brendan a trip creator');
 select is(public.me() ->> 'is_trip_creator', 'true', 'me() says so');
 select is(public.me() ->> 'display_name', 'Brendan', 'and he is named as the admin entered him');
-select is(public.claim_invite((select r ->> 'token' from creator_invite)) ->> 'status', 'invalid',
-          'the link works once');
+select is(public.claim_invite((select r ->> 'token' from creator_invite)) ->> 'status', 'ok',
+          'opening his own link again is still fine');
+select tests.as_user('cal');
+select is(public.claim_invite((select r ->> 'token' from creator_invite)) ->> 'status', 'used',
+          'but for anyone else the link is used: it works for one person');
+select is(public.me() ->> 'is_trip_creator', 'false', 'and it makes nobody else a trip creator');
+select tests.as_user('brendan');
 
 create temp table bandon as
 select public.create_trip('Bandon 2027', 'BANDON', 'Bandon, OR', '2027-06-10', '2027-06-13') as id;
@@ -171,12 +176,22 @@ select is(public.claim_invite((select von ->> 'token' from invites)),
           jsonb_build_object('status', 'ok', 'kind', 'trip', 'trip_id', tests.id('one')),
           'Von signs in from his link and is on the trip');
 select is(public.trip_role(tests.id('one')), 'player', 'as a player');
-select is(public.claim_invite((select von ->> 'token' from invites)) ->> 'status', 'invalid', 'the link works once');
+select is(public.claim_invite((select von ->> 'token' from invites)),
+          jsonb_build_object('status', 'ok', 'kind', 'trip', 'trip_id', tests.id('one')),
+          'opening his own link again says he is on the trip, not that the link is used');
+select tests.as_user('brendan');
+select is(public.claim_invite((select von ->> 'token' from invites)), '{"status": "used"}'::jsonb,
+          'for anyone else the link is used: it works for one person');
+select is(public.trip_role(tests.id('one')), null, 'and puts nobody else on the trip');
 select tests.as_postgres();
+select is((select count(*) from public.trip_members where trip_id = tests.id('one') and name = 'Von'
+            and profile_id = tests.id('user:von')), 1::bigint, 'Von''s spot is still Von''s');
+select is(public.invite_preview((select von ->> 'token' from invites)) -> 'email', 'null'::jsonb,
+          'a link that has been taken up still previews the trip, without an email');
 select results_eq(
-  $$ select m.email, m.invite_token_hash, p.display_name, p.handicap_index
+  $$ select m.email, p.display_name, p.handicap_index
      from public.trip_members m join public.profiles p on p.id = m.profile_id where m.trip_id = tests.id('one') and m.name = 'Von' $$,
-  $$ values ('von@test.teed', null::text, 'Von', 8.1::numeric(3,1)) $$,
+  $$ values ('von@test.teed', 'Von', 8.1::numeric(3,1)) $$,
   'his membership takes his sign-in email; his new profile takes the name and index the organizer entered');
 
 -- Matt: the organizer entered his email, so verifying it is enough, link or no link.
@@ -187,8 +202,12 @@ update auth.users set email_confirmed_at = now() where id = tests.id('user:matt'
 select is((select profile_id from public.trip_members where trip_id = tests.id('one') and name = 'Matt'), tests.id('user:matt'),
           'once verified, a matching email claims the membership');
 select tests.as_user('matt');
-select is(public.claim_invite((select matt ->> 'token' from invites)) ->> 'status', 'invalid',
-          'and the texted link is spent with it');
+select is(public.claim_invite((select matt ->> 'token' from invites)),
+          jsonb_build_object('status', 'ok', 'kind', 'trip', 'trip_id', tests.id('one')),
+          'and his texted link, opened after the code, says he is on the trip');
+select tests.as_user('von');
+select is(public.claim_invite((select matt ->> 'token' from invites)) ->> 'status', 'used',
+          'while to anyone else Matt''s link is used');
 
 -- Alice is already on the trip: Charlie's link can't put her on it twice.
 select tests.as_user('alice');
