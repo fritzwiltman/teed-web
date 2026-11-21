@@ -56,7 +56,7 @@ interface RoundRow {
     @if (session(); as s) {
       <app-player-header [label]="where()" [title]="s.trip.name" />
       <main class="content">
-        @if (loading()) {
+        @if (loading() && !shown()) {
           <ui-skeleton shape="block" height="260px" />
         } @else if (shown(); as r) {
           <ui-course-card
@@ -141,7 +141,7 @@ export class TripHome {
    * name, chips for tee time, format and tees (empty ones dropped), and my group.
    */
   protected readonly shown = computed(() => {
-    const rows = this.rounds();
+    const rows = this.rows();
     const today = localDate();
     const round = rows.find((r) => r.play_date >= today) ?? rows.at(-1);
     if (!round) return null;
@@ -177,6 +177,36 @@ export class TripHome {
       group,
       photo,
     };
+  });
+
+  /**
+   * The trip's rounds: the live ones when they are in hand (they are saved on the phone, so Home
+   * has its round card with no signal), else what this screen read itself.
+   */
+  private readonly rows = computed<RoundRow[]>(() => {
+    const live = this.live.for(this.session()?.trip.id);
+    if (!live.length) return this.rounds();
+    return [...live]
+      .sort(
+        (a, b) =>
+          a.row.play_date.localeCompare(b.row.play_date) || a.row.round_number - b.row.round_number,
+      )
+      .map(({ row }) => ({
+        round_number: row.round_number,
+        play_date: row.play_date,
+        tee_time: row.tee_time,
+        status: row.status,
+        courses: row.courses,
+        tees: row.tees,
+        round_formats: row.round_formats,
+        groups: row.groups.map((g) => ({
+          group_players: g.group_players.map((gp) => ({
+            position: gp.position,
+            players: gp.player,
+            scores: [{ count: gp.scores?.length ?? 0 }],
+          })),
+        })),
+      }));
   });
 
   /** The shown round as the engine has it, once the live rounds are in hand. */

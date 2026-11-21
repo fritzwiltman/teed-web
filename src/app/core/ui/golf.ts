@@ -333,6 +333,10 @@ export interface BoardRow {
       width: 46px;
       padding: 0 var(--s1);
     }
+    :host(.wide) th {
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
     :host(.wide) .pos {
       width: 44px;
     }

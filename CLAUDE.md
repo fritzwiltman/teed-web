@@ -22,8 +22,8 @@ src/                      Angular app
   app/auth/               the sign-in form: email, then the 6-digit code
   app/player/             sign in, invite, You, trip home, scorecard, hole picker, leaderboard, trip info, spectator link
   app/admin/              all trips, trip creators, overview, trip details, people, rounds, groups, courses, itinerary, proposals
-  app/scoring/            pure TypeScript scoring engine, one module per format (no Angular imports)
-  app/core/               supabase client, auth (who is signed in), session (which trip is open), offline queue, theme
+  app/scoring/            pure TypeScript scoring engine: handicaps, strokes, net stroke play, the 9-point game, settle-up (no Angular imports)
+  app/core/               supabase client, auth (who is signed in), session (which trip is open), rounds (live rounds and results), score queue, theme
   app/core/ui/            the design system: every card, button, row, tab bar and sheet (ui-*)
   app/dev/                /dev/ui, every component in every state, light beside dark (not linked anywhere)
   styles/tokens.scss      Theme "Tour" tokens: colors (light and dark), shape, spacing
@@ -31,7 +31,7 @@ supabase/migrations/      SQL schema, RLS policies, functions (one file per chan
 supabase/functions/       edge functions: invite, spectate, spectator-link, notify
 supabase/templates/       the sign-in emails (a 6-digit code, no link)
 supabase/seed/            Southern Pines 2026 test trip, course library seed list
-supabase/tests/           pgTAP tests (accounts, seed, the permissions matrix) and end-to-end tests; CI runs them on every PR
+supabase/tests/           pgTAP tests (accounts, seed, the permissions matrix, rounds) and end-to-end tests; CI runs them on every PR
 scripts/                  local DB test runner, the accounts-migration test, one-off course library import (OpenGolfAPI)
 docs/                     notes; wireframes live at the link above
 ```
@@ -48,6 +48,11 @@ docs/                     notes; wireframes live at the link above
 - **Sign-in is an emailed 6-digit code,** typed in the app, for everyone. Never a link, never a password.
 - **Scores are raw strokes per hole.** Formats (stroke, Stableford, Nassau with presses, Sixes, skins,
   scramble, alt shot, wolf, 9-point, Ryder Cup) are computed from them and never stored as results.
+- **Handicaps are worked out, never guessed.** New rounds calculate strokes from each player's handicap index
+  and the tees' rating and slope; a player with no index blocks round setup. Only Southern Pines 2026 has stored
+  per-round handicaps.
+- **Money is integer cents,** and every settle-up sums to zero. The 9-point game checks itself: 9 a hole, 81 a
+  nine, 162 a round.
 - **Scoring engine is pure and tested.** Every format has unit tests; the Southern Pines 2026 rerun must
   reproduce the old site's standings and settle-up (90% allowance, strokes off the low man).
 - **Offline first on the course.** Score entry works with no signal and syncs without duplicates.
