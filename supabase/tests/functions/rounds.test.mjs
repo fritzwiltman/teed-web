@@ -171,13 +171,15 @@ test('a round, end to end: set up, scored from two phones live, retried without 
     );
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Realtime did not connect')), 15_000);
-    channel.subscribe((status) => {
+    channel.subscribe((status, problem) => {
+      console.log(`  Realtime: ${status}${problem ? ' ' + problem.message : ''}`);
       if (status === 'SUBSCRIBED') {
         clearTimeout(timer);
         resolve();
       }
     });
   });
+  console.log('  Realtime: subscribed');
   await sleep(1000); // Realtime needs a moment after joining before changes flow
 
   // The app's write: an upsert keyed by round, player and hole.

@@ -70,4 +70,6 @@ jobs:
       - name: Install the client library
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run the round tests
-        run: node --test supabase/tests/functions/rounds.test.mjs
+        # Force the exit: the client library keeps sockets and timers open after the test ends.
+        run: node --test --test-force-exit --test-timeout=180000 supabase/tests/functions/rounds.test.mjs
+        timeout-minutes: 6
