@@ -239,7 +239,8 @@ const ROLE_NAME: Record<Role, string> = {
               ui-button
               type="button"
               variant="text"
-              class="center danger"
+              class="center"
+              tone="danger"
               (click)="removing.set(true)"
             >
               Remove from trip
@@ -287,9 +288,6 @@ const ROLE_NAME: Record<Role, string> = {
       letter-spacing: 1px;
       text-transform: uppercase;
       color: var(--muted);
-    }
-    .danger {
-      color: var(--red);
     }
   `,
 })

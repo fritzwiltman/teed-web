@@ -144,12 +144,7 @@ const PULL_MAX = 230;
         @if (loading() && !shown()) {
           <ui-skeleton shape="block" height="260px" />
         } @else if (shown(); as r) {
-          <ui-course-card
-            [name]="r.round.courses?.name ?? ''"
-            [label]="r.label"
-            [photo]="r.photo"
-            [live]="r.live"
-          >
+          <ui-course-card [name]="r.round.courses?.name ?? ''" [photo]="r.photo" [live]="r.live">
             @for (chip of r.chips; track chip.name) {
               <ui-chip [icon]="chip.icon" [attr.aria-label]="chip.name">{{ chip.value }}</ui-chip>
             }

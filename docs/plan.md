@@ -78,12 +78,20 @@ M3.6 replaced the codes below with accounts and "co-admins" with co-organizers: 
 - **Alerts:**
   - Three levels for organizer announcements: Announcement (green), Important (amber) and Urgent (red, sent time-sensitive).
   - Saving a tee time or itinerary change offers "Notify everyone?"
-- **Organizer mode:**
-  - Its own docked tab bar: Overview · Rounds · People · Itinerary.
+- **One app for everyone** (M3.6 screens, replacing "organizer mode"):
+  - Everyone gets Home · Scorecard · Board · Trip; spectators Home · Board. No Manage toggle, no organizer shell.
+  - Organizer powers sit in place, gated by role: an Edit pill beside the title of what it edits (Edit becomes a
+    filled Done in the same spot), Alert on Home, and cards that appear only when needed (Publish on a draft,
+    Review for suggested changes, Finalize once all scores are in). The app admin counts as organizer.
+  - The trip line in every trip header ("SOUTHERN PINES · OCT 8–12 ⌄") opens the trip switcher: you (to You),
+    then current and upcoming trips.
+  - A round's setup lives on its own page (Trip › Courses › the round) and is edited there in place.
   - "Publish", then a separate prompt to text everyone their link.
   - Trip badges read Draft, Upcoming, In progress or Final (from the status and the dates). "Live" and the red dot
     only ever mean a round in play: at least one score in, and not final.
-- **Trip tab:** Itinerary · Courses · Info (stay, buy-ins, house rules).
+- **Trip tab:** "Trip overview": Itinerary · Courses · People · Info. Courses has no Edit (each round has its own
+  page; organizers get "+ Add a round"). The stay is the itinerary's lodging item for now. Buy-in is one amount
+  per trip until per-round buy-ins exist.
 
 ## Screens (from the wireframes)
 

@@ -245,7 +245,8 @@ function tripDays(start: string, end: string): string[] {
               ui-button
               type="button"
               variant="text"
-              class="center danger"
+              class="center"
+              tone="danger"
               (click)="deleting.set(true)"
             >
               Delete
@@ -270,11 +271,7 @@ function tripDays(start: string, end: string): string[] {
       (confirmed)="remove()"
     />
   `,
-  styles: `
-    .danger {
-      color: var(--red);
-    }
-  `,
+  styles: ``,
 })
 export class TripItinerary {
   private readonly data = inject(AdminData);

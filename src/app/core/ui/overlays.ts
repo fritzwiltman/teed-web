@@ -127,7 +127,7 @@ export class UiAttention {
       <h2>{{ title() }}</h2>
       <p class="line">{{ line() }}</p>
       <ng-content />
-      <button ui-button type="button" class="danger" [busy]="busy()" (click)="confirmed.emit()">
+      <button ui-button type="button" tone="danger" [busy]="busy()" (click)="confirmed.emit()">
         {{ action() }}
       </button>
       <button ui-button type="button" variant="outline" (click)="open.set(false)">Cancel</button>
@@ -141,11 +141,6 @@ export class UiAttention {
       font-size: 16px;
       font-weight: 500;
       color: var(--ink-2);
-    }
-    .danger {
-      background: var(--red);
-      border-color: var(--red);
-      color: #fff;
     }
   `,
 })

@@ -216,12 +216,7 @@ const seen = new Map<string, SpectatorView>();
             }
           } @else {
             @if (shown(); as r) {
-              <ui-course-card
-                [name]="r.course?.name ?? ''"
-                [label]="label(r)"
-                [photo]="photo(r)"
-                [live]="live(r)"
-              >
+              <ui-course-card [name]="r.course?.name ?? ''" [photo]="photo(r)" [live]="live(r)">
                 @for (chip of chips(r); track chip) {
                   <ui-chip>{{ chip }}</ui-chip>
                 }

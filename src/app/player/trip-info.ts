@@ -235,7 +235,8 @@ interface Stay {
             ui-button
             type="button"
             variant="text"
-            class="center danger"
+            class="center"
+            tone="danger"
             (click)="deleting.set(true)"
           >
             Delete trip
@@ -331,9 +332,6 @@ interface Stay {
   styles: `
     .inset {
       padding: 0 var(--s4) var(--s3);
-    }
-    .danger {
-      color: var(--red);
     }
   `,
 })

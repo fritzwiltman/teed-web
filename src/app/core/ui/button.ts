@@ -8,6 +8,8 @@ import { ChangeDetectionStrategy, Component, booleanAttribute, input } from '@an
  *   text      a text link
  *   size="small" makes primary or outline 40 tall and only as wide as its label.
  *
+ * `tone="danger"` is red: a filled red button (the confirm sheet's) or red text ("Delete trip").
+ *
  * `busy` shows a spinner beside the label, which stays ("Publishing…"), and ignores taps.
  */
 @Component({
@@ -16,6 +18,7 @@ import { ChangeDetectionStrategy, Component, booleanAttribute, input } from '@an
   host: {
     '[class]': 'variant() + " " + size()',
     '[class.busy]': 'busy()',
+    '[class.danger]': "tone() === 'danger'",
     '[attr.aria-busy]': 'busy() ? "true" : null',
   },
   template: `
@@ -64,6 +67,15 @@ import { ChangeDetectionStrategy, Component, booleanAttribute, input } from '@an
       color: var(--accent);
       font-size: 15px;
     }
+    :host(.danger) {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff;
+    }
+    :host(.text.danger) {
+      background: none;
+      color: var(--red);
+    }
     :host(:disabled),
     :host(.busy) {
       cursor: default;
@@ -89,4 +101,5 @@ export class UiButton {
   readonly variant = input<'primary' | 'outline' | 'text'>('primary');
   readonly size = input<'large' | 'small'>('large');
   readonly busy = input(false, { transform: booleanAttribute });
+  readonly tone = input<'normal' | 'danger'>('normal');
 }

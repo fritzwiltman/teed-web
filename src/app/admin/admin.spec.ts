@@ -462,7 +462,12 @@ describe('organizer screens', () => {
     // Played at the Palmer course: it comes first in the course sheet.
     const live = [
       roundRow({
-        courses: { id: 'palmer', name: 'PGA National Resort Palmer Course', short_name: null, photo_path: null },
+        courses: {
+          id: 'palmer',
+          name: 'PGA National Resort Palmer Course',
+          short_name: null,
+          photo_path: null,
+        },
       }),
     ];
     const chip = (page: HTMLElement, name: string) =>
@@ -682,7 +687,10 @@ describe('organizer screens', () => {
     it('shows each name with the role under it and the index on the right', async () => {
       const { page } = await boot('/trip/people', 'player', withRoster);
       expect(page().querySelector('[aria-label=Players] h2')?.textContent).toBe('Players · 4');
-      expect([...page().querySelectorAll('.columns span')].map((x) => x.textContent)).toEqual(['Player', 'HCI']);
+      expect([...page().querySelectorAll('.columns span')].map((x) => x.textContent)).toEqual([
+        'Player',
+        'HCI',
+      ]);
       expect(row(page(), 'Fritz').querySelector('.detail')?.textContent).toBe('Organizer');
       expect(row(page(), 'Brother').querySelector('.detail')?.textContent).toBe('Co-organizer');
       expect(row(page(), 'Matt').querySelector('.value')?.textContent).toBe('28.7');

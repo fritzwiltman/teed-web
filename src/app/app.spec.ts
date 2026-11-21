@@ -662,16 +662,17 @@ describe('App', () => {
       expect(card(el)?.querySelector('h2')?.textContent).toBe('Course 2');
     });
 
-    it('heads the card "Round N · Ddd, Mon D", for the next round or else the last', async () => {
+    it('titles Home "Round N · Ddd, Mon D", for the next round or else the last', async () => {
       const next = await boot('/home', SAVED, {
         rounds: [round(1, iso(-1)), round(2, '2099-10-09')],
       });
-      expect(label(next.el)).toBe('Round 2 · Fri, Oct 9');
+      expect(next.el.querySelector('h1')?.textContent?.trim()).toBe('Round 2 · Fri, Oct 9');
+      expect(label(next.el)).toBeFalsy(); // not said twice
       TestBed.resetTestingModule();
       const past = await boot('/home', SAVED, {
         rounds: [round(3, '2026-10-11'), round(4, '2026-10-12')],
       });
-      expect(label(past.el)).toBe('Round 4 · Mon, Oct 12');
+      expect(past.el.querySelector('h1')?.textContent?.trim()).toBe('Round 4 · Mon, Oct 12');
     });
 
     it('has chips for tee time, format and tees, and drops the empty ones', async () => {
@@ -1268,9 +1269,7 @@ describe('App', () => {
         live: [playing({}, { play_date: '2026-11-26' })],
       });
       const link = el.querySelector('a[ui-list-row]')!;
-      expect(link.querySelector('.title')?.textContent?.trim()).toBe(
-        'PGA National Palmer',
-      );
+      expect(link.querySelector('.title')?.textContent?.trim()).toBe('PGA National Palmer');
       expect(link.getAttribute('href')).toBe('/trip/rounds/r1');
     });
 

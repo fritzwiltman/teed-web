@@ -205,7 +205,8 @@ const DRAFT_KEY = 'teed.round-draft';
               ui-button
               type="button"
               variant="text"
-              class="center danger"
+              class="center"
+              tone="danger"
               [disabled]="busy()"
               (click)="deleting.set(true)"
             >
@@ -314,9 +315,6 @@ const DRAFT_KEY = 'teed.round-draft';
       color: var(--warn-edge);
       font: 800 13px/1 var(--font-body);
       cursor: pointer;
-    }
-    .danger {
-      color: var(--red);
     }
   `,
 })
