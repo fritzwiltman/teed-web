@@ -219,6 +219,13 @@ select results_eq($$ select round_number::int from public.rounds where trip_id =
                   $$ values (1), (2) $$, 'deleting round 1 renumbers the rest');
 select is((select count(*) from public.scores where round_id = (select r1 from made)), 0::bigint, 'and takes its scores with it');
 
+-- ── Realtime ────────────────────────────────────────────────────────────────
+
+select is(
+  (select count(*) from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename in ('scores', 'rounds')),
+  2::bigint, 'scores and rounds are published to Realtime');
+
 -- ── Time zone and the spectator view ────────────────────────────────────────
 
 select throws_ok($$ update public.trips set timezone = 'Mars/Olympus' where id = tests.id('trip') $$, '22023', null,

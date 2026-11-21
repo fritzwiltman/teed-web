@@ -179,23 +179,36 @@ test('a round, end to end: set up, scored from two phones live, retried without 
       }
     });
   });
-  console.log('  Realtime: subscribed');
-  await sleep(1000); // Realtime needs a moment after joining before changes flow
 
   // The app's write: an upsert keyed by round, player and hole.
   const enter = (client, rows) => client.from('scores').upsert(rows, { onConflict: 'round_id,player_id,hole' });
   const score = (player, hole, strokes) => ({ round_id: round, player_id: player, hole, strokes });
 
+  // After joining, Realtime takes a moment to start reading the database's changes, and anything
+  // written before that is not replayed (the app reloads the rounds on joining for the same
+  // reason). Write a throwaway score until one is heard, then time a fresh one.
+  let warm = false;
+  for (let i = 0; i < 40 && !warm; i++) {
+    assert.equal((await enter(dad.client, [score(brotherId, 18, 2 + (i % 5))])).error, null);
+    for (let j = 0; j < 5 && !heard.length; j++) await sleep(100);
+    warm = heard.length > 0;
+  }
+  assert.ok(warm, 'Realtime delivers score changes to another player on the trip');
+  await sleep(1000);
+  assert.equal((await admin.from('scores').delete().eq('round_id', round)).error, null);
+  await sleep(1000);
+  heard.length = 0;
+
   const sentAt = Date.now();
   const first = await enter(dad.client, [score(fritzId, 1, 5), score(dadId, 1, 6), score(brotherId, 1, 4)]);
   assert.equal(first.error, null, `anyone in the group enters for the group: ${first.error?.message}`);
-  for (let i = 0; i < 50 && heard.length < 3; i++) await sleep(100);
-  assert.equal(heard.length, 3, 'the other phone hears all three scores');
-  const took = Math.max(...heard.map((h) => h.at)) - sentAt;
+  for (let i = 0; i < 50 && heard.filter((h) => h.type !== 'DELETE').length < 3; i++) await sleep(100);
+  assert.equal(heard.filter((h) => h.type !== 'DELETE').length, 3, 'the other phone hears all three scores');
+  const took = Math.max(...heard.filter((h) => h.type !== 'DELETE').map((h) => h.at)) - sentAt;
   console.log(`  Realtime: 3 scores reached the other phone in ${took} ms`);
   assert.ok(took < 5000, `scores should arrive within a couple of seconds (took ${took} ms)`);
   assert.deepEqual(
-    heard.map((h) => [h.row.player_id, h.row.hole, h.row.strokes]).sort(),
+    heard.filter((h) => h.type !== 'DELETE').map((h) => [h.row.player_id, h.row.hole, h.row.strokes]).sort(),
     [[brotherId, 1, 4], [dadId, 1, 6], [fritzId, 1, 5]].sort(),
   );
 

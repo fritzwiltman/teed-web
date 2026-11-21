@@ -255,14 +255,22 @@ grant execute on function private.trips_timezone_known(), private.round_is_compl
   private.finalize_due_rounds(uuid) to authenticated, service_role;
 
 -- ── Realtime ────────────────────────────────────────────────────────────────
--- Scores are already published (0002). Rounds join them so "Final" reaches every phone.
+-- Scores and rounds are published, so a score and "Final" reach every phone. 0002 added scores
+-- only if the publication already existed when it ran; this makes sure of both, whatever the
+-- project started with. (RLS still decides who receives what.)
 do $$
+declare
+  t text;
 begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
-     and not exists (select 1 from pg_publication_tables
-                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'rounds') then
-    alter publication supabase_realtime add table public.rounds;
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
   end if;
+  foreach t in array array['scores', 'rounds'] loop
+    if not exists (select 1 from pg_publication_tables
+                   where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
 end;
 $$;
 
