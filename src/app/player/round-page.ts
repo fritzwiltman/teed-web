@@ -44,6 +44,15 @@ const HOLES = { '18': '18 holes', front: 'Front 9', back: 'Back 9' };
           }
         </ui-card>
 
+        @if (scores().length) {
+          <ui-card aria-label="Scores">
+            <ui-section-head title="Scores" />
+            @for (line of scores(); track line.name) {
+              <ui-list-row [title]="line.name" [detail]="line.holes" [value]="line.gross" />
+            }
+          </ui-card>
+        }
+
         <a ui-button variant="outline" routerLink="/score" [queryParams]="{ round: v.row.id }">
           Scorecard
         </a>
@@ -113,6 +122,22 @@ export class RoundPage {
         };
       }),
   );
+
+  /** Each player's strokes hole by hole, a pickup marked "PU": "5 · 4 · 7 PU · 3". */
+  protected readonly scores = computed(() => {
+    const result = this.view()?.result;
+    if (!result || result.state === 'scheduled') return [];
+    return result.players
+      .filter((p) => p.thru > 0)
+      .map((p) => ({
+        name: p.name,
+        gross: `${p.gross}`,
+        holes: result.holes
+          .filter((h) => h.strokes[p.id] !== undefined)
+          .map((h) => `${h.strokes[p.id]}${h.pickedUp[p.id] ? ' PU' : ''}`)
+          .join(' · '),
+      }));
+  });
 
   /** "100% · off the low man" */
   protected readonly rule = computed(() => {

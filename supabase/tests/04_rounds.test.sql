@@ -133,6 +133,16 @@ insert into public.scores (round_id, player_id, hole, strokes) values ((select r
 on conflict (round_id, player_id, hole) do update set strokes = excluded.strokes;
 select results_eq($$ select count(*), max(strokes)::int from public.scores where round_id = (select r1 from made) $$,
                   $$ values (1::bigint, 4) $$, 'sending the same hole again changes it and never adds a second score');
+select is((select picked_up from public.scores where round_id = (select r1 from made) and player_id = tests.id('brother') and hole = 1),
+          false, 'a score is not a pickup unless it says so');
+insert into public.scores (round_id, player_id, hole, strokes, picked_up) values ((select r1 from made), tests.id('brother'), 1, 6, true)
+on conflict (round_id, player_id, hole) do update set strokes = excluded.strokes, picked_up = excluded.picked_up;
+select results_eq($$ select strokes::int, picked_up from public.scores where round_id = (select r1 from made) and player_id = tests.id('brother') and hole = 1 $$,
+                  $$ values (6, true) $$, 'picking up saves the strokes and marks the hole');
+insert into public.scores (round_id, player_id, hole, strokes, picked_up) values ((select r1 from made), tests.id('brother'), 1, 5, false)
+on conflict (round_id, player_id, hole) do update set strokes = excluded.strokes, picked_up = excluded.picked_up;
+select results_eq($$ select strokes::int, picked_up from public.scores where round_id = (select r1 from made) and player_id = tests.id('brother') and hole = 1 $$,
+                  $$ values (5, false) $$, 'changing the score afterwards clears it');
 select tests.as_postgres();
 
 select throws_ok($$ select tests.save('fritz', '{fritz,dad}', nine => false, round => (select r1 from made)) $$, '23514',

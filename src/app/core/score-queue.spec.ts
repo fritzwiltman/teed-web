@@ -37,11 +37,27 @@ describe('ScoreQueue', () => {
     queue.put('r1', 'dad', 7, 5);
     expect(queue.count()).toBe(1); // on the phone before anything is sent
     await settle();
-    expect(sent()).toEqual([{ round_id: 'r1', player_id: 'dad', hole: 7, strokes: 5 }]);
+    expect(sent()).toEqual([
+      { round_id: 'r1', player_id: 'dad', hole: 7, strokes: 5, picked_up: false },
+    ]);
     expect(upsert.mock.calls[0][1]).toEqual({ onConflict: 'round_id,player_id,hole' });
     expect(saved).toHaveBeenCalledTimes(1);
     expect(queue.count()).toBe(0);
     expect(localStorage.getItem('teed.scores.pending')).toBeNull();
+  });
+
+  it('a pickup is sent marked, and a played score after it is sent unmarked', async () => {
+    const queue = make();
+    queue.put('r1', 'dad', 7, 7, true);
+    await settle();
+    expect(sent()).toEqual([
+      { round_id: 'r1', player_id: 'dad', hole: 7, strokes: 7, picked_up: true },
+    ]);
+    queue.put('r1', 'dad', 7, 6);
+    await settle();
+    expect(sent(1)).toEqual([
+      { round_id: 'r1', player_id: 'dad', hole: 7, strokes: 6, picked_up: false },
+    ]);
   });
 
   it('with no signal, keeps the scores and says how many are waiting', async () => {
@@ -81,8 +97,8 @@ describe('ScoreQueue', () => {
     expect(queue.count()).toBe(0);
     expect(upsert.mock.calls.length).toBe(before + 1);
     expect(sent(before)).toEqual([
-      { round_id: 'r1', player_id: 'dad', hole: 7, strokes: 5 },
-      { round_id: 'r1', player_id: 'me', hole: 7, strokes: 4 },
+      { round_id: 'r1', player_id: 'dad', hole: 7, strokes: 5, picked_up: false },
+      { round_id: 'r1', player_id: 'me', hole: 7, strokes: 4, picked_up: false },
     ]);
     // Nothing left to send: no duplicate goes out afterwards.
     await queue.flush();
@@ -115,7 +131,9 @@ describe('ScoreQueue', () => {
     const reopened = make(); // a fresh start reads the phone's saved list
     expect(reopened.count()).toBe(1);
     await settle();
-    expect(sent()).toEqual([{ round_id: 'r1', player_id: 'dad', hole: 7, strokes: 5 }]);
+    expect(sent()).toEqual([
+      { round_id: 'r1', player_id: 'dad', hole: 7, strokes: 5, picked_up: false },
+    ]);
     expect(reopened.count()).toBe(0);
   });
 
@@ -158,7 +176,9 @@ describe('ScoreQueue', () => {
     release({ error: null, status: 201 });
     await settle();
     await settle();
-    expect(sent(1)).toEqual([{ round_id: 'r1', player_id: 'dad', hole: 7, strokes: 6 }]);
+    expect(sent(1)).toEqual([
+      { round_id: 'r1', player_id: 'dad', hole: 7, strokes: 6, picked_up: false },
+    ]);
     expect(queue.count()).toBe(0);
   });
 });

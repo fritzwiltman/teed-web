@@ -16,9 +16,9 @@ describe('roundInput', () => {
     ]);
     expect(input.rules).toEqual({ allowance: 1, offLowMan: true, pickupNetDouble: true });
     expect(input.scores).toEqual([
-      { playerId: 'me', hole: 1, strokes: 4 },
-      { playerId: 'me', hole: 2, strokes: 5 },
-      { playerId: 'dad', hole: 1, strokes: 6 },
+      { playerId: 'me', hole: 1, strokes: 4, pickedUp: false },
+      { playerId: 'me', hole: 2, strokes: 5, pickedUp: false },
+      { playerId: 'dad', hole: 1, strokes: 6, pickedUp: false },
     ]);
     expect(input.formats.map((f) => f.key)).toEqual(['stroke', 'nine_point']);
     expect(input.players.every((p) => p.storedPlaying === null)).toBe(true);
@@ -26,9 +26,9 @@ describe('roundInput', () => {
 
   it('a score still on its way shows at once, over what the server last said', () => {
     const pending = [
-      { round_id: 'r1', player_id: 'me', hole: 1, strokes: 3, at: 1 },
-      { round_id: 'r1', player_id: 'bro', hole: 1, strokes: 5, at: 2 },
-      { round_id: 'another-round', player_id: 'me', hole: 2, strokes: 9, at: 3 },
+      { round_id: 'r1', player_id: 'me', hole: 1, strokes: 3, picked_up: false, at: 1 },
+      { round_id: 'r1', player_id: 'bro', hole: 1, strokes: 5, picked_up: false, at: 2 },
+      { round_id: 'another-round', player_id: 'me', hole: 2, strokes: 9, picked_up: false, at: 3 },
     ];
     const input = roundInput(roundRow({}, { me: [4], dad: [6] }), RULES, pending);
     const result = safeResult(input);
@@ -111,6 +111,11 @@ describe('RoundsService', () => {
     expect(service.for('t1')[0].result.holes[0].strokes['dad']).toBe(5);
     scores({ eventType: 'UPDATE', new: { round_id: 'r1', player_id: 'dad', hole: 1, strokes: 4 } });
     expect(service.for('t1')[0].result.holes[0].strokes['dad']).toBe(4);
+    scores({
+      eventType: 'UPDATE',
+      new: { round_id: 'r1', player_id: 'dad', hole: 1, strokes: 7, picked_up: true },
+    });
+    expect(service.for('t1')[0].result.holes[0].pickedUp['dad']).toBe(true);
     scores({ eventType: 'DELETE', old: { round_id: 'r1', player_id: 'dad', hole: 1 } });
     expect(service.for('t1')[0].result.holes[0].strokes['dad']).toBeUndefined();
     // Another trip's score is none of this trip's business.
@@ -125,9 +130,18 @@ describe('RoundsService', () => {
     const { service, queue } = make([roundRow()]);
     await service.load('t1');
     service.setScore('r1', 'me', 3, 4);
-    expect(queue.put).toHaveBeenCalledWith('r1', 'me', 3, 4);
-    queue.onSaved!([{ round_id: 'r1', player_id: 'me', hole: 3, strokes: 4, at: 1 }]);
+    expect(queue.put).toHaveBeenCalledWith('r1', 'me', 3, 4, false);
+    queue.onSaved!([
+      { round_id: 'r1', player_id: 'me', hole: 3, strokes: 4, picked_up: false, at: 1 },
+    ]);
     expect(service.for('t1')[0].result.holes[2].strokes['me']).toBe(4);
+    // A pickup keeps its mark all the way to the round.
+    service.setScore('r1', 'dad', 3, 7, true);
+    expect(queue.put).toHaveBeenCalledWith('r1', 'dad', 3, 7, true);
+    queue.onSaved!([
+      { round_id: 'r1', player_id: 'dad', hole: 3, strokes: 7, picked_up: true, at: 2 },
+    ]);
+    expect(service.for('t1')[0].result.holes[2].pickedUp['dad']).toBe(true);
   });
 
   it('finalizes a round', async () => {

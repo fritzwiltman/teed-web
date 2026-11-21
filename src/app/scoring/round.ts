@@ -36,8 +36,15 @@ export interface HoleResult {
   strokes: Record<string, number | undefined>;
   /** Strokes received on this hole, by player. */
   received: Record<string, number>;
-  /** Net score that counts on this hole, by player. */
+  /** Net score that counts in net stroke play (at most net double bogey with that rule on). */
   net: Record<string, number | undefined>;
+  /**
+   * Where a player stands on the hole for a game: their actual net, uncapped; a pickup stands
+   * behind everyone who finished (Infinity), level with any other pickup.
+   */
+  standing: Record<string, number | undefined>;
+  /** Who picked up here. */
+  pickedUp: Record<string, boolean>;
   /** Everyone in the group has a score here. */
   complete: boolean;
   games: GameHole[];
@@ -81,7 +88,11 @@ export function scoreRound(input: RoundInput): RoundResult {
   const perHole = received.map((n) => (n == null ? null : strokesByHole(n, holes, tee)));
 
   const entered = new Map<string, number>();
-  for (const s of input.scores) entered.set(`${s.playerId}:${s.hole}`, s.strokes);
+  const pickups = new Set<string>();
+  for (const s of input.scores) {
+    entered.set(`${s.playerId}:${s.hole}`, s.strokes);
+    if (s.pickedUp) pickups.add(`${s.playerId}:${s.hole}`);
+  }
 
   const holeResults: HoleResult[] = holes.map((hole) => {
     const par = tee.par[hole - 1];
@@ -92,6 +103,8 @@ export function scoreRound(input: RoundInput): RoundResult {
       strokes: {},
       received: {},
       net: {},
+      standing: {},
+      pickedUp: {},
       complete: true,
       games: [],
     };
@@ -100,12 +113,15 @@ export function scoreRound(input: RoundInput): RoundResult {
       const gets = perHole[i]?.get(hole);
       result.strokes[player.id] = strokes;
       result.received[player.id] = gets ?? 0;
+      const pickedUp = strokes != null && pickups.has(`${player.id}:${hole}`);
+      result.pickedUp[player.id] = pickedUp;
       if (strokes == null) result.complete = false;
       else if (gets != null) {
         const counted = rules.pickupNetDouble
           ? Math.min(strokes, netDoubleBogey(par, gets))
           : strokes;
         result.net[player.id] = counted - gets;
+        result.standing[player.id] = pickedUp ? Infinity : strokes - gets;
       }
     });
     if (!players.length) result.complete = false;
@@ -134,7 +150,7 @@ export function scoreRound(input: RoundInput): RoundResult {
   if (nine && players.length === 3 && received.every((n) => n != null)) {
     const ids = players.map((p) => p.id);
     const byHole = new Map(holeResults.map((h) => [h.hole, h]));
-    const game = ninePoint(ids, holes, (id, hole) => byHole.get(hole)!.net[id]);
+    const game = ninePoint(ids, holes, (id, hole) => byHole.get(hole)!.standing[id]);
     for (const [hole, values] of game.byHole)
       byHole.get(hole)!.games.push({ key: 'nine_point', values });
     const value = Number(nine.settings['point_value_cents']);

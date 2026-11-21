@@ -2,6 +2,8 @@
 --
 --   • rounds.holes: 18, the front nine or the back nine.
 --   • trips.timezone: where the trip is played, so "the day is over" means midnight there.
+--   • scores.picked_up: the player picked up on this hole. The strokes saved are net double bogey;
+--     the 9-point game ranks a pickup below everyone who finished the hole.
 --   • save_round() / delete_round(): the organizer's round setup, in one transaction.
 --   • A round is Complete when every player in it has a score on every hole in play. A Complete
 --     round becomes Final on its own once its day is over; an unfinished one waits for the
@@ -20,6 +22,9 @@ alter table public.rounds
 
 alter table public.trips
   add column timezone text not null default 'America/New_York';
+
+alter table public.scores
+  add column picked_up boolean not null default false;
 
 create function private.trips_timezone_known() returns trigger
 language plpgsql security definer set search_path = ''
@@ -314,7 +319,8 @@ as $$
                  order by g.group_number)
           from public.groups g where g.round_id = r.id), '[]'::jsonb),
         'scores', coalesce((
-          select jsonb_agg(jsonb_build_object('player_id', s.player_id, 'hole', s.hole, 'strokes', s.strokes)
+          select jsonb_agg(jsonb_build_object('player_id', s.player_id, 'hole', s.hole, 'strokes', s.strokes,
+                                              'picked_up', s.picked_up)
                            order by s.player_id, s.hole)
           from public.scores s where s.round_id = r.id), '[]'::jsonb),
         'presses', coalesce((

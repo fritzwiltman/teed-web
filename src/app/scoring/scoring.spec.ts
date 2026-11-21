@@ -434,6 +434,77 @@ describe('a full 18 of the 9-point game, worked by hand', () => {
   });
 });
 
+describe('picking up in the 9-point game', () => {
+  // Hole 12: par 4, nobody gets a stroke there, so net double bogey is 6 for all three.
+  // A pickup is saved as 6 strokes and marked; it ranks below anyone who finished the hole.
+  type Entry = [strokes: number, pickedUp?: boolean];
+  const hole12 = (me: Entry, dad: Entry, bro: Entry) => {
+    const round = scoreRound(
+      ninePointRound({
+        scores: [
+          { playerId: 'me', hole: 12, strokes: me[0], pickedUp: me[1] },
+          { playerId: 'dad', hole: 12, strokes: dad[0], pickedUp: dad[1] },
+          { playerId: 'bro', hole: 12, strokes: bro[0], pickedUp: bro[1] },
+        ],
+      }),
+    );
+    expectTotalsAddUp(round);
+    return round;
+  };
+  const points = (round: RoundResult) => round.holes[11].games[0].values;
+
+  it('a pickup against a real net double bogey: the one who finished wins', () => {
+    // Me holes out for 6; Dad picks up (also 6 on the card). Not a tie for second.
+    const round = hole12([6], [6, true], [4]);
+    expect(points(round)).toEqual({ bro: 5, me: 3, dad: 1 });
+    expect(round.holes[11].pickedUp).toEqual({ me: false, dad: true, bro: false });
+  });
+
+  it('a pickup against a real net triple: the one who finished still wins', () => {
+    // Me holes out for 7, more than the 6 Dad's pickup is saved as.
+    expect(points(hole12([7], [6, true], [4]))).toEqual({ bro: 5, me: 3, dad: 1 });
+  });
+
+  it('two pickups tie with each other: 5-2-2', () => {
+    expect(points(hole12([4], [6, true], [6, true]))).toEqual({ me: 5, dad: 2, bro: 2 });
+    // Even when the finisher made a 9.
+    expect(points(hole12([9], [6, true], [6, true]))).toEqual({ me: 5, dad: 2, bro: 2 });
+  });
+
+  it('all three pick up: 3-3-3', () => {
+    expect(points(hole12([6, true], [6, true], [6, true]))).toEqual({ me: 3, dad: 3, bro: 3 });
+  });
+
+  it('ranks finishers by their actual net, not capped: a 7 loses to a 6', () => {
+    expect(points(hole12([7], [6], [4]))).toEqual({ bro: 5, dad: 3, me: 1 });
+    expect(points(hole12([8], [7], [9]))).toEqual({ dad: 5, me: 3, bro: 1 });
+  });
+
+  it('net stroke totals keep the net double bogey cap', () => {
+    const round = hole12([7], [6, true], [9]);
+    expect(round.players.map((p) => [p.gross, p.net])).toEqual([
+      [7, 6],
+      [6, 6],
+      [9, 6],
+    ]);
+  });
+
+  it('a pickup on a stroke hole is saved at par + 2 + the stroke, and still ranks last', () => {
+    // Hole 1: Dad gets a stroke, so his pickup is 7. Me makes a real 7 (net 7); Brother 4.
+    const round = scoreRound(
+      ninePointRound({
+        scores: [
+          { playerId: 'me', hole: 1, strokes: 7 },
+          { playerId: 'dad', hole: 1, strokes: 7, pickedUp: true },
+          { playerId: 'bro', hole: 1, strokes: 4 },
+        ],
+      }),
+    );
+    expect(round.holes[0].games[0].values).toEqual({ bro: 5, me: 3, dad: 1 });
+    expectTotalsAddUp(round);
+  });
+});
+
 describe('a round in progress', () => {
   it('only counts holes all three have finished', () => {
     // Brother has not putted out on 18.
@@ -493,7 +564,7 @@ describe('a nine-hole round', () => {
   //  hole  gross Me/Dad/Bro   net Me/Dad/Bro   points
   //   1–4      4 / 6 / 6        4 / 5 / 6        5 / 3 / 1   (×4)
   //   5        4 / 7 / 5        4 / 6 / 5        5 / 1 / 3
-  //   6–7      4 / 7 / 5        4 / 7→6 / 5      5 / 1 / 3   (×2: 7 is over net double, counts 6)
+  //   6–7      4 / 7 / 5        4 / 7 / 5        5 / 1 / 3   (×2: the game ranks the actual 7)
   //   8–9      4 / 5 / 4        4 / 5 / 4        4 / 1 / 4   (×2: no stroke for Dad now)
   //  Total: Me 43, Dad 17, Brother 21 = 81. Against 27: +16, −10, −6.
   const round = scoreRound(

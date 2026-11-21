@@ -7,6 +7,8 @@ export interface PendingScore {
   player_id: string;
   hole: number;
   strokes: number;
+  /** The player picked up on this hole. */
+  picked_up: boolean;
   /** When it was entered on this phone (ms). Tells a newer entry from the one being sent. */
   at: number;
 }
@@ -66,12 +68,13 @@ export class ScoreQueue {
   }
 
   /** Records a score and starts sending it. */
-  put(roundId: string, playerId: string, hole: number, strokes: number): void {
+  put(roundId: string, playerId: string, hole: number, strokes: number, pickedUp = false): void {
     const entry: PendingScore = {
       round_id: roundId,
       player_id: playerId,
       hole,
       strokes,
+      picked_up: pickedUp,
       at: Date.now(),
     };
     this.save([...this.pending().filter((p) => !same(p, entry)), entry]);
@@ -107,11 +110,12 @@ export class ScoreQueue {
   private async send(batch: PendingScore[]): Promise<'saved' | 'refused' | 'retry'> {
     try {
       const { error, status } = await this.db.from('scores').upsert(
-        batch.map(({ round_id, player_id, hole, strokes }) => ({
+        batch.map(({ round_id, player_id, hole, strokes, picked_up }) => ({
           round_id,
           player_id,
           hole,
           strokes,
+          picked_up: !!picked_up,
         })),
         { onConflict: 'round_id,player_id,hole' },
       );

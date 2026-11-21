@@ -36,7 +36,7 @@ export interface RoundRow {
       position: number;
       playing_handicap: number | null;
       player: { id: string; name: string; initials: string; handicap_index: number | null } | null;
-      scores: { hole: number; strokes: number }[];
+      scores: { hole: number; strokes: number; picked_up?: boolean }[];
     }[];
   }[];
 }
@@ -66,7 +66,7 @@ const ROUND_COLUMNS =
   'tees(id, name, yards, rating, slope, par, stroke_index, hole_yards), ' +
   'round_formats(format_key, settings, sort_order), ' +
   'groups(id, group_number, group_players(position, playing_handicap, ' +
-  'player:trip_members(id, name, initials, handicap_index), scores(hole, strokes)))';
+  'player:trip_members(id, name, initials, handicap_index), scores(hole, strokes, picked_up)))';
 
 /** What the engine is given for a round: its rows, the house rules, and scores still on their way. */
 export function roundInput(row: RoundRow, rules: TripRules, pending: PendingScore[]): RoundInput {
@@ -75,10 +75,18 @@ export function roundInput(row: RoundRow, rules: TripRules, pending: PendingScor
     .sort((a, b) => a.group_number - b.group_number)
     .flatMap((g) => g.group_players.slice().sort((a, b) => a.position - b.position))
     .filter((gp) => gp.player);
-  const scores = new Map<string, { playerId: string; hole: number; strokes: number }>();
+  const scores = new Map<
+    string,
+    { playerId: string; hole: number; strokes: number; pickedUp: boolean }
+  >();
   for (const gp of players)
     for (const s of gp.scores ?? [])
-      scores.set(`${gp.player!.id}:${s.hole}`, { playerId: gp.player!.id, ...s });
+      scores.set(`${gp.player!.id}:${s.hole}`, {
+        playerId: gp.player!.id,
+        hole: s.hole,
+        strokes: s.strokes,
+        pickedUp: !!s.picked_up,
+      });
   // A score entered on this phone shows at once, before the server has it.
   for (const p of pending)
     if (p.round_id === row.id && players.some((gp) => gp.player!.id === p.player_id))
@@ -86,6 +94,7 @@ export function roundInput(row: RoundRow, rules: TripRules, pending: PendingScor
         playerId: p.player_id,
         hole: p.hole,
         strokes: p.strokes,
+        pickedUp: !!p.picked_up,
       });
   return {
     id: row.id,
@@ -161,7 +170,8 @@ export class RoundsService {
 
   constructor() {
     this.queue.onSaved = (scores) => {
-      for (const s of scores) this.applyScore(s.round_id, s.player_id, s.hole, s.strokes);
+      for (const s of scores)
+        this.applyScore(s.round_id, s.player_id, s.hole, s.strokes, !!s.picked_up);
     };
     if (typeof document !== 'undefined') {
       // Back from the lock screen: Realtime may have missed a few.
@@ -223,6 +233,7 @@ export class RoundsService {
               player_id?: string;
               hole?: number;
               strokes?: number;
+              picked_up?: boolean;
             };
             if (!row.round_id || !row.player_id || !row.hole) return;
             this.applyScore(
@@ -230,6 +241,7 @@ export class RoundsService {
               row.player_id,
               row.hole,
               change.eventType === 'DELETE' ? null : (row.strokes ?? null),
+              !!row.picked_up,
             );
           })
           .on(
@@ -255,8 +267,14 @@ export class RoundsService {
   }
 
   /** Enters a score: it shows at once and is sent as soon as there is signal. */
-  setScore(roundId: string, playerId: string, hole: number, strokes: number): void {
-    this.queue.put(roundId, playerId, hole, strokes);
+  setScore(
+    roundId: string,
+    playerId: string,
+    hole: number,
+    strokes: number,
+    pickedUp = false,
+  ): void {
+    this.queue.put(roundId, playerId, hole, strokes, pickedUp);
   }
 
   /** The organizer makes a complete round official. */
@@ -281,6 +299,7 @@ export class RoundsService {
     playerId: string,
     hole: number,
     strokes: number | null,
+    pickedUp = false,
   ): void {
     this.patchRound(roundId, (row) => ({
       ...row,
@@ -289,7 +308,10 @@ export class RoundsService {
         group_players: group.group_players.map((gp) => {
           if (gp.player?.id !== playerId) return gp;
           const others = (gp.scores ?? []).filter((s) => s.hole !== hole);
-          return { ...gp, scores: strokes == null ? others : [...others, { hole, strokes }] };
+          return {
+            ...gp,
+            scores: strokes == null ? others : [...others, { hole, strokes, picked_up: pickedUp }],
+          };
         }),
       })),
     }));

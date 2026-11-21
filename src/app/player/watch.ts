@@ -66,7 +66,7 @@ export interface SpectatorRound {
       playing_handicap?: number | null;
     }[];
   }[];
-  scores: { player_id: string; hole: number; strokes: number }[];
+  scores: { player_id: string; hole: number; strokes: number; picked_up?: boolean }[];
 }
 
 /** A spectator's round as the engine takes it. */
@@ -95,7 +95,12 @@ export function spectatorInput(r: SpectatorRound, trip: SpectatorView['trip']): 
         index: p.handicap_index == null ? null : Number(p.handicap_index),
         storedPlaying: p.playing_handicap ?? null,
       })),
-    scores: r.scores.map((s) => ({ playerId: s.player_id, hole: s.hole, strokes: s.strokes })),
+    scores: r.scores.map((s) => ({
+      playerId: s.player_id,
+      hole: s.hole,
+      strokes: s.strokes,
+      pickedUp: !!s.picked_up,
+    })),
     formats: r.formats.map((f) => ({ key: f.format_key, settings: f.settings ?? {} })),
   };
 }

@@ -49,7 +49,7 @@ const ROUND_COLUMNS =
   'tees(id, name, yards, rating, slope, par, stroke_index, hole_yards), ' +
   'round_formats(format_key, settings, sort_order), ' +
   'groups(id, group_number, group_players(position, playing_handicap, ' +
-  'player:trip_members(id, name, initials, handicap_index), scores(hole, strokes)))';
+  'player:trip_members(id, name, initials, handicap_index), scores(hole, strokes, picked_up)))';
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -182,7 +182,7 @@ test('a round, end to end: set up, scored from two phones live, retried without 
 
   // The app's write: an upsert keyed by round, player and hole.
   const enter = (client, rows) => client.from('scores').upsert(rows, { onConflict: 'round_id,player_id,hole' });
-  const score = (player, hole, strokes) => ({ round_id: round, player_id: player, hole, strokes });
+  const score = (player, hole, strokes, picked_up = false) => ({ round_id: round, player_id: player, hole, strokes, picked_up });
 
   // After joining, Realtime takes a moment to start reading the database's changes, and anything
   // written before that is not replayed (the app reloads the rounds on joining for the same
@@ -222,6 +222,13 @@ test('a round, end to end: set up, scored from two phones live, retried without 
   const dadsFirst = await admin.from('scores').select('strokes').eq('round_id', round).eq('player_id', dadId).eq('hole', 1).single();
   assert.equal(dadsFirst.data.strokes, 7, 'the later entry wins');
 
+  // ── A pickup is marked; a played score after it clears the mark ──
+  const dadsHole = () => admin.from('scores').select('strokes, picked_up').eq('round_id', round).eq('player_id', dadId).eq('hole', 1).single();
+  assert.equal((await enter(dad.client, [score(dadId, 1, 8, true)])).error, null);
+  assert.deepEqual((await dadsHole()).data, { strokes: 8, picked_up: true });
+  assert.equal((await enter(dad.client, [score(dadId, 1, 7)])).error, null);
+  assert.deepEqual((await dadsHole()).data, { strokes: 7, picked_up: false });
+
   // ── Nobody outside the trip can write or read ──
   assert.ok((await enter(stranger.client, [score(dadId, 2, 4)])).error, 'a stranger cannot enter a score');
   assert.deepEqual((await stranger.client.from('scores').select('strokes').eq('round_id', round)).data, []);
@@ -258,6 +265,7 @@ test('a round, end to end: set up, scored from two phones live, retried without 
   let view = await watch();
   assert.deepEqual(view.rounds.map((r) => r.holes), ['18', 'front']);
   assert.equal(view.rounds[0].scores.length, 54);
+  assert.equal(view.rounds[0].scores[0].picked_up, false, 'the spectator view says who picked up');
   assert.equal(view.rounds[0].tee.par.length, 18);
   assert.deepEqual(view.rounds[0].formats.map((f) => [f.format_key, f.settings]), [['stroke', {}], ['nine_point', {}]]);
   await fritz.client.from('trips').update({ spectators_see_money: true }).eq('id', trip);

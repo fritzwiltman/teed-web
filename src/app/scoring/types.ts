@@ -38,6 +38,8 @@ export interface Score {
   playerId: string;
   hole: number;
   strokes: number;
+  /** The player picked up: the strokes are net double bogey, and games rank them below finishers. */
+  pickedUp?: boolean;
 }
 
 export interface RoundFormat {

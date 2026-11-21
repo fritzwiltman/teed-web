@@ -1,4 +1,6 @@
-// The 9-point game: three players, nine points a hole, split by net score.
+// The 9-point game: three players, nine points a hole, split by net score. A hole is ranked by
+// actual net strokes; a player who picked up ranks below everyone who finished it (the caller
+// passes Infinity for a pickup, so two pickups tie).
 
 /** Thrown when the points don't add up. They always should: this guards the engine itself. */
 export class NinePointError extends Error {}

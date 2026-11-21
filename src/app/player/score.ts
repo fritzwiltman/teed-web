@@ -88,7 +88,11 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
                 <ui-list-row
                   [title]="p.name"
                   [detail]="detail(h, p)"
-                  [value]="h.strokes[p.id] === undefined ? '–' : '' + h.strokes[p.id]"
+                  [value]="
+                    h.strokes[p.id] === undefined
+                      ? '–'
+                      : h.strokes[p.id] + (h.pickedUp[p.id] ? ' PU' : '')
+                  "
                 />
               }
             }
@@ -303,14 +307,14 @@ export class Score {
       .join(' · ');
   }
 
-  /** A dot per stroke received, then the net once there is a score: "●● · net 4". */
+  /** A dot per stroke received, "PU" for a pickup, then the net: "●● · PU · net 6". */
   protected detail(h: HoleResult, p: PlayerResult): string | null {
     const gets = h.received[p.id] ?? 0;
     const dots = gets > 0 ? '●'.repeat(gets) : gets < 0 ? `+${-gets}` : '';
     const net = h.net[p.id];
     const state =
       h.strokes[p.id] === undefined ? 'not saved' : net === undefined ? '' : `net ${net}`;
-    return [dots, state].filter(Boolean).join(' · ') || null;
+    return [dots, h.pickedUp[p.id] ? 'PU' : '', state].filter(Boolean).join(' · ') || null;
   }
 
   /** What each game made of this hole, once everyone has a score on it. */
@@ -322,11 +326,12 @@ export class Score {
     }));
   }
 
-  protected enter(playerId: string, hole: number, strokes: number): void {
+  /** Saves a score. − and + always save a played score, so they clear a pickup. */
+  protected enter(playerId: string, hole: number, strokes: number, pickedUp = false): void {
     const v = this.view();
     if (!v || !this.editable()) return;
     this.queue.refused.set(0);
-    this.rounds.setScore(v.row.id, playerId, hole, strokes);
+    this.rounds.setScore(v.row.id, playerId, hole, strokes, pickedUp);
   }
 
   /** Saves par for anyone not touched on this hole, then moves to the next. */
@@ -343,7 +348,7 @@ export class Score {
   }
 
   protected pickUp(h: HoleResult, p: PlayerResult): void {
-    this.enter(p.id, h.hole, this.pickupFor(h, p));
+    this.enter(p.id, h.hole, this.pickupFor(h, p), true);
     this.pickingUp.set(false);
   }
 

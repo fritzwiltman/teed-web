@@ -318,9 +318,12 @@ Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip
   half, rounded, spread over those nine by stroke index (9-hole ratings aren't in the library). New rounds never
   store a handicap. Southern Pines 2026 keeps the per-round numbers read off GHIN, and the engine uses a stored
   number when there is one (the formula reproduces Saturday to Monday exactly; Friday's were Saturday's).
-- **Net scores:** with "pick up at net double bogey" on, a hole counts at most net double bogey in net totals and
-  in the 9-point game, as the old site did. Gross is always the raw strokes.
-- **9-point game:** a hole counts once all three have a score. The engine throws unless every counted hole is 9
+- **Net scores:** with "pick up at net double bogey" on, a hole counts at most net double bogey in net stroke
+  totals, as the old site did. Gross is always the raw strokes.
+- **Pickups:** "Pick up" saves net double bogey as the strokes and sets `scores.picked_up`; − or + afterwards
+  clears it. The scorecard and the round's page mark it "PU".
+- **9-point game:** a hole counts once all three have a score. It is ranked by actual net strokes (no cap), and
+  a player who picked up ranks below everyone who finished the hole; two pickups tie. The engine throws unless every counted hole is 9
   points, a finished nine 81 and a finished round 162.
 - **Money:** against par, 3 points a hole: (points − 3 × holes counted) × the point value, in cents. A round's
   nets sum to zero. Settle-up reduces nets to the fewest payments (whoever owes most pays whoever is owed most);
@@ -334,7 +337,7 @@ Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip
 - **Live:** `RoundsService` reads the trip's rounds once, saves them on the phone and follows `scores` and
   `rounds` over Realtime. Boards and settle-up are worked out on the phone from raw strokes; nothing is stored.
 - **Left for the full milestones:** more than one group, team formats, pairing tools, presses, tee-time alerts,
-  a Net / Gross switch, a "picked up" marker, score-change flags on Finalize.
+  a Net / Gross switch, score-change flags on Finalize.
 - **Presses** (match formats only): off, manual, auto when closed out, auto when dormie, auto both; per bet in Nassau.
 - **Ryder Cup** (trip level): two teams; matches worth 1 (½ halve); live match status.
 - **Skins** add-on per round: gross or net, carryovers optional. **Pots:** buy-in × players split by % across games;
