@@ -50,3 +50,57 @@ export function roundRow(
     ...over,
   };
 }
+
+/** The hand-worked Nassau (src/app/scoring/nassau.spec.ts): Fritz's and Brother's strokes. */
+export const NASSAU_FRITZ = [6, 6, 7, 5, 6, 5, 5, 5, 4, 5, 4, 6, 4, 5, 3, 5, 4, 4];
+export const NASSAU_BRO = [4, 4, 4, 4, 4, 4, 4, 3, 5, 4, 5, 5, 4, 4, 4, 4, 5, 6];
+
+/**
+ * A Nassau round for tests: Fritz (10.0, a stroke on holes 1 to 6) against Brother (4.0), $5 a
+ * side, played through `thru` holes of the hand-worked round. Brother wins the front 4 & 3
+ * after 6, the back is halved, and Brother wins the overall 6 & 5 after 13.
+ */
+export function nassauRow(
+  thru = 0,
+  over: Partial<RoundRow> = {},
+  settings: Record<string, unknown> = {},
+): RoundRow {
+  const base = roundRow();
+  const player = (id: string, name: string, index: number, position: number, all: number[]) => ({
+    position,
+    playing_handicap: null,
+    player: { id, name, initials: name[0], handicap_index: index },
+    scores: all.slice(0, thru).map((strokes, i) => ({ hole: i + 1, strokes })),
+  });
+  return {
+    ...base,
+    round_formats: [
+      { id: 'f-stroke', format_key: 'stroke', settings: {}, sort_order: 0 },
+      {
+        id: 'f-nassau',
+        format_key: 'nassau',
+        settings: {
+          stake_front_cents: 500,
+          stake_back_cents: 500,
+          stake_overall_cents: 500,
+          auto_press: false,
+          press_at: 'closed',
+          ...settings,
+        },
+        sort_order: 1,
+        presses: [],
+      },
+    ],
+    groups: [
+      {
+        id: 'g',
+        group_number: 1,
+        group_players: [
+          player('me', 'Fritz', 10, 1, NASSAU_FRITZ),
+          player('bro', 'Brother', 4, 2, NASSAU_BRO),
+        ],
+      },
+    ],
+    ...over,
+  };
+}

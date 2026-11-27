@@ -51,6 +51,8 @@ export interface Score {
 export interface RoundFormat {
   key: string;
   settings: Record<string, unknown>;
+  /** Presses made by hand in a match game: the bet pressed, and the hole it was pressed after. */
+  presses?: { bet: string; afterHole: number }[];
 }
 
 export interface RoundInput {

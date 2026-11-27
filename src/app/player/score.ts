@@ -1,6 +1,7 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { AdminData, AdminError } from '../admin/data';
-import { dayHeader, localDate } from '../core/format';
+import { dayHeader, formatName, localDate } from '../core/format';
+import { LaunchService } from '../core/launch';
 import { RoundView, RoundsService } from '../core/rounds';
 import { ScoreQueue } from '../core/score-queue';
 import { SessionService } from '../core/session';
@@ -19,10 +20,18 @@ import {
   UiStepperRow,
   UiSyncLine,
 } from '../core/ui';
-import { HoleResult, PlayerResult, netDoubleBogey, nextHole } from '../scoring';
+import {
+  HoleResult,
+  PlayerResult,
+  Pressable,
+  matchCards,
+  matchStatus,
+  moneyText,
+  netDoubleBogey,
+  nextHole,
+  pressable,
+} from '../scoring';
 import { TripHeader } from './trip-header';
-
-const GAME_NAMES: Record<string, string> = { nine_point: '9-point game' };
 
 /**
  * The round to score: today's if I'm in it and it isn't final, else the next one that isn't
@@ -68,8 +77,12 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
       (titleTapped)="picking.set(true)"
     />
     <main class="content">
-      @if (queue.count(); as waiting) {
-        <ui-sync-line>Syncing {{ waiting }} {{ waiting === 1 ? 'score' : 'scores' }}</ui-sync-line>
+      <!-- Saves are silent. Only a score stuck for a while (no signal) is said, in a spot of its
+           own over the top of the page, so nothing below it ever moves. -->
+      @if (queue.slow()) {
+        <ui-sync-line class="waiting">
+          {{ queue.count() }} {{ queue.count() === 1 ? 'score' : 'scores' }} waiting for signal
+        </ui-sync-line>
       }
       @if (queue.refused(); as lost) {
         <p class="error-text" role="alert">
@@ -150,9 +163,22 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
             }
           </div>
 
+          <!-- Below the buttons, so a bet changing or Press appearing never moves them. -->
+          @if (bets(); as line) {
+            <p class="center bets">{{ line }}</p>
+          }
+          @if (editable() && presses().length) {
+            <button ui-button type="button" variant="outline" (click)="pressing.set(true)">
+              Press
+            </button>
+          }
+
           @for (game of gameRows(h); track game.title) {
             <ui-game-card [title]="game.title" [note]="'Hole ' + h.hole" [rows]="game.rows" />
           }
+        }
+        @for (game of matches(); track game.title) {
+          <ui-game-card [title]="game.title" [note]="game.note" [rows]="game.rows" />
         }
         @for (game of totals(); track game.title) {
           <ui-game-card [title]="game.title" [note]="game.note" [rows]="game.rows" />
@@ -182,6 +208,23 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
             }
           }
         </ui-sheet>
+        <ui-sheet [(open)]="pressing" label="Press">
+          <ui-section-head title="Press" />
+          @for (bet of presses(); track bet.bet) {
+            <button
+              ui-list-row
+              type="button"
+              [title]="bet.label"
+              [detail]="pressDetail(bet)"
+              chevron
+              [disabled]="pressBusy()"
+              (click)="press(bet)"
+            ></button>
+          }
+          @if (pressError(); as text) {
+            <p class="error-text" role="alert">{{ text }}</p>
+          }
+        </ui-sheet>
         <ui-index-sheet
           [(open)]="indexOpen"
           [name]="needsIndex() ?? ''"
@@ -197,6 +240,22 @@ export function roundToScore(rounds: RoundView[], today = localDate()): RoundVie
     </main>
   `,
   styles: `
+    .content {
+      position: relative;
+    }
+    .waiting {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--s4);
+      font-size: 12px;
+      pointer-events: none;
+    }
+    .bets {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
     .blocked {
       display: flex;
       align-items: center;
@@ -232,6 +291,10 @@ export class Score {
   protected readonly picking = signal(false);
   protected readonly pickingUp = signal(false);
   protected readonly loading = signal(true);
+  protected readonly pressing = signal(false);
+  protected readonly pressBusy = signal(false);
+  protected readonly pressError = signal<string | null>(null);
+  private readonly launch = inject(LaunchService);
   private openedFor: string | null = null;
 
   protected readonly view = computed<RoundView | null>(() => {
@@ -300,26 +363,51 @@ export class Score {
     Math.min(...(this.view()?.result.players.map((p) => p.thru) ?? [0])),
   );
 
-  /** Out / In / Total for each game: the eyeball check that every nine is 81. */
+  /** A match game's open bets from my side: "Front 1 up · Front press AS · Overall 2 up". */
+  protected readonly bets = computed(() => {
+    const v = this.view();
+    return v ? matchStatus(v.result, this.session()?.player.id) : null;
+  });
+
+  /** The bets I may press now. */
+  protected readonly presses = computed<Pressable[]>(() => {
+    const v = this.view();
+    return v ? pressable(v.result, this.session()?.player.id) : [];
+  });
+
+  /** Every bet of a match game, with who is ahead or how it ended. */
+  protected readonly matches = computed(() => {
+    const v = this.view();
+    if (!v) return [];
+    return matchCards(v.result).map((m) => ({
+      title: formatName(m.key),
+      note: `Thru ${v.result.games.find((g) => g.key === m.key)?.holesCounted ?? 0}`,
+      rows: m.rows as GameRow[],
+    }));
+  });
+
+  /** Out / In / Total for each points game: the eyeball check that every nine is 81. */
   protected readonly totals = computed(() =>
-    (this.view()?.result.games ?? []).map((game) => {
-      const players = this.view()!.result.players;
-      const sum = (side: Record<string, number>) => players.reduce((n, p) => n + side[p.id], 0);
-      return {
-        title: `${GAME_NAMES[game.key] ?? game.key} · points`,
-        note: `${game.holesCounted} ${game.holesCounted === 1 ? 'hole' : 'holes'}`,
-        rows: [
-          ...players.map((p) => ({
-            label: p.name,
-            value: `Out ${game.out[p.id]} · In ${game.in[p.id]} · Total ${game.total[p.id]}`,
-          })),
-          {
-            label: 'All',
-            value: `Out ${sum(game.out)} · In ${sum(game.in)} · Total ${sum(game.total)}`,
-          },
-        ] as GameRow[],
-      };
-    }),
+    (this.view()?.result.games ?? [])
+      .filter((game) => !game.bets)
+      .map((game) => {
+        const players = this.view()!.result.players;
+        const sum = (side: Record<string, number>) => players.reduce((n, p) => n + side[p.id], 0);
+        return {
+          title: `${formatName(game.key)} · points`,
+          note: `${game.holesCounted} ${game.holesCounted === 1 ? 'hole' : 'holes'}`,
+          rows: [
+            ...players.map((p) => ({
+              label: p.name,
+              value: `Out ${game.out[p.id]} · In ${game.in[p.id]} · Total ${game.total[p.id]}`,
+            })),
+            {
+              label: 'All',
+              value: `Out ${sum(game.out)} · In ${sum(game.in)} · Total ${sum(game.total)}`,
+            },
+          ] as GameRow[],
+        };
+      }),
   );
 
   protected readonly strokeTotals = computed<GameRow[]>(() =>
@@ -336,6 +424,16 @@ export class Score {
       if (!v || this.openedFor === v.row.id) return;
       this.openedFor = v.row.id;
       this.hole.set(nextHole(v.result) ?? v.result.holes.at(-1)?.hole ?? null);
+    });
+    // Back in the app after a while mid-round: on to the next unscored hole.
+    let landings = this.launch.landed();
+    effect(() => {
+      const count = this.launch.landed();
+      if (count === landings) return;
+      landings = count;
+      const v = untracked(() => this.view());
+      const next = v && nextHole(v.result);
+      if (next) this.hole.set(next);
     });
     effect(() => {
       const tripId = this.session()?.trip.id;
@@ -391,7 +489,7 @@ export class Score {
   protected gameRows(h: HoleResult): { title: string; rows: GameRow[] }[] {
     const players = this.view()?.result.players ?? [];
     return h.games.map((game) => ({
-      title: GAME_NAMES[game.key] ?? game.key,
+      title: formatName(game.key),
       rows: players.map((p) => ({ label: p.name, value: `${game.values[p.id]}` })),
     }));
   }
@@ -420,6 +518,31 @@ export class Score {
   protected pickUp(h: HoleResult, p: PlayerResult): void {
     this.enter(p.id, h.hole, this.pickupFor(h, p), true);
     this.pickingUp.set(false);
+  }
+
+  /** "Holes 7–9 · $5": what pressing this bet starts. */
+  protected pressDetail(bet: Pressable): string {
+    const v = this.view();
+    const found = v?.result.games.flatMap((g) => g.bets ?? []).find((b) => b.id === bet.bet);
+    if (!found) return '';
+    return [
+      bet.from === found.to ? `Hole ${bet.from}` : `Holes ${bet.from}–${found.to}`,
+      found.stakeCents ? moneyText(found.stakeCents).replace('.00', '') : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  /** Presses a bet: a new one from the next hole. It needs signal. */
+  protected async press(bet: Pressable): Promise<void> {
+    const v = this.view();
+    if (!v || this.pressBusy()) return;
+    this.pressBusy.set(true);
+    this.pressError.set(null);
+    const done = await this.rounds.press(v.row.id, bet.game, bet.bet, bet.afterHole);
+    this.pressBusy.set(false);
+    if (done) this.pressing.set(false);
+    else this.pressError.set("Couldn't press. It needs signal: try again in a moment.");
   }
 
   protected go(hole: number | null): void {

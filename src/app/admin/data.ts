@@ -90,7 +90,26 @@ export interface RoundSetupFields {
   player_tees: Record<string, string | null>;
   nine_point: boolean;
   point_value_cents: number;
+  /** Nassau: two players, match play. Absent means off. */
+  nassau?: NassauFields | null;
 }
+
+/** A Nassau's settings as round setup edits them. Stakes are in cents. */
+export interface NassauFields {
+  front: number;
+  back: number;
+  overall: number;
+  auto_press: boolean;
+  press_at: 'closed' | 'dormie';
+}
+
+export const NASSAU_DEFAULT: NassauFields = {
+  front: 500,
+  back: 500,
+  overall: 500,
+  auto_press: false,
+  press_at: 'closed',
+};
 
 export interface RoundSetupRow extends RoundSetupFields {
   id: string;
@@ -284,7 +303,7 @@ export class AdminData {
     if (error || !data) fail(error, "Couldn't load that round.");
     const row = data as unknown as Omit<
       RoundSetupRow,
-      'player_ids' | 'player_tees' | 'nine_point' | 'point_value_cents' | 'scored'
+      'player_ids' | 'player_tees' | 'nine_point' | 'point_value_cents' | 'scored' | 'nassau'
     > & {
       round_formats: { format_key: string; settings: Record<string, unknown> }[];
       groups: (ScoredGroup & {
@@ -293,6 +312,7 @@ export class AdminData {
     };
     const { round_formats, groups, ...round } = row;
     const nine = round_formats.find((f) => f.format_key === 'nine_point');
+    const match = round_formats.find((f) => f.format_key === 'nassau')?.settings;
     return {
       ...round,
       player_ids: groups
@@ -304,6 +324,15 @@ export class AdminData {
       ),
       nine_point: !!nine,
       point_value_cents: Number(nine?.settings['point_value_cents']) || 0,
+      nassau: match
+        ? {
+            front: Number(match['stake_front_cents']) || 0,
+            back: Number(match['stake_back_cents']) || 0,
+            overall: Number(match['stake_overall_cents']) || 0,
+            auto_press: match['auto_press'] === true,
+            press_at: match['press_at'] === 'dormie' ? 'dormie' : 'closed',
+          }
+        : null,
       scored: hasScores(groups),
     };
   }
@@ -346,6 +375,18 @@ export class AdminData {
         const tee = f.player_tees[id];
         return tee && tee !== f.tee_id ? tee : null;
       }),
+      // Only sent for a Nassau, so a round without one saves on a database not yet migrated.
+      ...(f.nassau
+        ? {
+            p_nassau: {
+              stake_front_cents: f.nassau.front,
+              stake_back_cents: f.nassau.back,
+              stake_overall_cents: f.nassau.overall,
+              auto_press: f.nassau.auto_press,
+              press_at: f.nassau.press_at,
+            },
+          }
+        : {}),
     });
     if (error) fail(error, "Couldn't save the round.");
     return data as string;

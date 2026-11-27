@@ -24,8 +24,8 @@ src/                      Angular app
                           (itinerary, courses, people, info), a round's page (setup, edited in place), suggested changes,
                           spectator link
   app/admin/              the data layer for running trips (data.ts), New trip, Trip creators, the course library
-  app/scoring/            pure TypeScript scoring engine: handicaps, strokes, net stroke play, the 9-point game, settle-up (no Angular imports)
-  app/core/               supabase client, auth (who is signed in), session (which trip is open), rounds (live rounds and results), score queue, theme
+  app/scoring/            pure TypeScript scoring engine: handicaps, strokes, net stroke play, the 9-point game, Nassau, settle-up (no Angular imports)
+  app/core/               supabase client, auth (who is signed in), session (which trip is open), rounds (live rounds and results), score queue, launch (landing on your hole), theme
   app/core/ui/            the design system: every card, button, row, tab bar and sheet (ui-*)
   app/dev/                /dev/ui, every component in every state, light beside dark (not linked anywhere)
   styles/tokens.scss      Theme "Tour" tokens: colors (light and dark), shape, spacing
@@ -57,6 +57,11 @@ docs/                     notes; wireframes live at the link above
   per-round handicaps.
 - **Money is integer cents,** and every settle-up sums to zero. The 9-point game checks itself: 9 a hole, 81 a
   nine, 162 a round.
+- **Rounds finish after a night's sleep.** A complete round becomes Final from 3 AM local on the day after the
+  latest of its date, its last score change and its last reopening, never when a score is saved. Until then its
+  group can correct it; after, an organizer can reopen it from the Board.
+- **Saves are silent.** No line or spinner per tap on the scorecard. A score waiting more than five seconds says
+  so in a fixed spot that moves nothing.
 - **Scoring engine is pure and tested.** Every format has unit tests; the Southern Pines 2026 rerun must
   reproduce the old site's standings and settle-up (90% allowance, strokes off the low man).
 - **Offline first on the course.** Score entry works with no signal and syncs without duplicates.

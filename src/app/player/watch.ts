@@ -1,5 +1,13 @@
 import { Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
-import { dayHeader, formatDay, formatTime, gameLine, localDate, tripLine } from '../core/format';
+import {
+  dayHeader,
+  formatDay,
+  formatName,
+  formatTime,
+  gameLine,
+  localDate,
+  tripLine,
+} from '../core/format';
 import { safeResult } from '../core/rounds';
 import { SUPABASE } from '../core/supabase';
 import {
@@ -12,6 +20,7 @@ import {
   settleUp,
   tripBoard,
   tripNets,
+  matchCards,
 } from '../scoring';
 import {
   Choice,
@@ -63,7 +72,9 @@ export interface SpectatorRound {
     stroke_index?: number[];
   } | null;
   /** Money settings (a point value) are only here when the trip shows spectators winnings. */
-  formats: { format_key: string; settings?: Record<string, unknown> }[];
+  formats: { id?: string; format_key: string; settings?: Record<string, unknown> }[];
+  /** Presses made by hand in a match game. */
+  presses?: { round_format_id: string; bet: string; after_hole: number }[];
   groups: {
     players: {
       id: string;
@@ -120,7 +131,13 @@ export function spectatorInput(r: SpectatorRound, trip: SpectatorView['trip']): 
       strokes: s.strokes,
       pickedUp: !!s.picked_up,
     })),
-    formats: r.formats.map((f) => ({ key: f.format_key, settings: f.settings ?? {} })),
+    formats: r.formats.map((f) => ({
+      key: f.format_key,
+      settings: f.settings ?? {},
+      presses: (r.presses ?? [])
+        .filter((p) => p.round_format_id === f.id)
+        .map((p) => ({ bet: p.bet, afterHole: p.after_hole })),
+    })),
   };
 }
 
@@ -192,6 +209,9 @@ const seen = new Map<string, SpectatorView>();
                   [rows]="b.table.rows"
                   [live]="b.live"
                 />
+                @for (match of b.matches; track match.key) {
+                  <ui-game-card [title]="match.title" [rows]="match.rows" />
+                }
                 @if (b.settle; as s) {
                   <ui-card aria-label="Settle up">
                     <ui-section-head
@@ -352,6 +372,7 @@ export class Watch {
         found.round.course?.name ||
         `Round ${found.round.round_number}`,
       table: roundBoard(found.result) as BoardTable,
+      matches: matchCards(found.result).map((m) => ({ ...m, title: formatName(m.key) })),
       settle: (nets && settleUp(nets, this.names())) as SettleUp | null,
       live: found.result.state === 'live',
       final: found.result.state === 'final',
@@ -374,6 +395,13 @@ export class Watch {
       const result = this.results().find((r) => r.round.id === this.shown()?.id)?.result;
       const game = result?.games[0];
       if (!result || !game || !game.holesCounted) return null;
+      const match = matchCards(result).find((m) => m.key === game.key);
+      if (match)
+        return {
+          title: `Today · Round ${result.number}`,
+          note: `${formatName(game.key)} · thru ${game.holesCounted}`,
+          rows: match.rows,
+        };
       return {
         title: `Today · Round ${result.number}`,
         note: `9-point game · thru ${game.holesCounted}`,

@@ -6,7 +6,7 @@ import { AuthService, Me } from '../core/auth';
 import { RoundRow, RoundsService, TripRules, roundInput, safeResult } from '../core/rounds';
 import { roundRow } from '../core/rounds.testing';
 import { MyTrip, Role, SessionService, TripSession } from '../core/session';
-import { RoundPage } from '../player/round-page';
+import { RoundPage, newRoundDay } from '../player/round-page';
 import { Suggestions } from '../player/suggestions';
 import { TripCourses } from '../player/trip-courses';
 import { TripInfo } from '../player/trip-info';
@@ -584,6 +584,177 @@ describe('organizer screens', () => {
       });
       expect(t.page().textContent).toContain('For a group of exactly 3');
       expect(t.page().textContent).not.toContain('A point is worth');
+    });
+
+    describe('Nassau', () => {
+      const TWO = { roster: vi.fn(async () => [FRITZ, BRO]) };
+      const field = (page: HTMLElement, name: string) =>
+        page.querySelector<HTMLInputElement>(`input[name=${name}]`);
+      const pickCourse = async (t: Awaited<ReturnType<typeof boot>>) => {
+        await t.click('Course');
+        await t.pickRow('PGA National Resort Fazio Course');
+      };
+
+      it('is only offered to a group of exactly two', async () => {
+        const t = await boot('/trip/rounds/new', 'organizer', { live });
+        expect(t.page().textContent).toContain('For a group of exactly 2');
+        expect(field(t.page(), 'stake-each')).toBeNull();
+        await t.click('Dad plays');
+        expect(t.page().textContent).not.toContain('For a group of exactly 2');
+      });
+
+      it('starts at $5 each, press when closed out, auto press off', async () => {
+        const t = await boot('/trip/rounds/new', 'organizer', { live, data: TWO });
+        await pickCourse(t);
+        await t.click('Nassau');
+        expect(field(t.page(), 'stake-each')?.value).toBe('5');
+        await t.click('Add round');
+        expect(t.api.saveRound).toHaveBeenCalledWith(
+          'vero',
+          null,
+          expect.objectContaining({
+            player_ids: ['me', 'bro'],
+            nine_point: false,
+            nassau: { front: 500, back: 500, overall: 500, auto_press: false, press_at: 'closed' },
+          }),
+        );
+      });
+
+      it('"Each" sets all three stakes; Customize gives one for each', async () => {
+        const t = await boot('/trip/rounds/new', 'organizer', { live, data: TWO });
+        await pickCourse(t);
+        await t.click('Nassau');
+        await t.type('input[name=stake-each]', '10');
+        await t.click('Customize');
+        expect(field(t.page(), 'stake-back')?.value).toBe('10');
+        await t.type('input[name=stake-overall]', '20');
+        await t.click('Dormie');
+        await t.click('Auto press');
+        await t.click('Add round');
+        expect(t.api.saveRound).toHaveBeenCalledWith(
+          'vero',
+          null,
+          expect.objectContaining({
+            nassau: {
+              front: 1000,
+              back: 1000,
+              overall: 2000,
+              auto_press: true,
+              press_at: 'dormie',
+            },
+          }),
+        );
+      });
+
+      it('a stake must be an amount in dollars', async () => {
+        const t = await boot('/trip/rounds/new', 'organizer', { live, data: TWO });
+        await pickCourse(t);
+        await t.click('Nassau');
+        await t.type('input[name=stake-each]', 'five');
+        await t.click('Add round');
+        expect(t.api.saveRound).not.toHaveBeenCalled();
+        expect(t.page().querySelector('[role=alert]')?.textContent).toContain(
+          'A stake is an amount in dollars.',
+        );
+      });
+
+      it('once a score is in, auto press and when a press comes are settled', async () => {
+        const setup = {
+          ...SETUP,
+          scored: true,
+          player_ids: ['me', 'bro'],
+          player_tees: {},
+          nine_point: false,
+          nassau: { front: 500, back: 1000, overall: 2000, auto_press: true, press_at: 'dormie' },
+        };
+        const t = await boot('/trip/rounds/r1', 'organizer', {
+          live,
+          data: { ...TWO, roundSetup: vi.fn(async () => setup) },
+        });
+        await t.click('Edit');
+        // Different stakes open as three fields.
+        expect(field(t.page(), 'stake-back')?.value).toBe('10');
+        expect(t.page().textContent).toContain('Set before the round');
+        const toggle = t
+          .page()
+          .querySelector<HTMLButtonElement>('button[aria-label="Auto press"]')!;
+        expect(toggle.disabled).toBe(true);
+        expect(
+          [...t.page().querySelectorAll<HTMLButtonElement>('button')]
+            .filter((b) => ['Closed out', 'Dormie'].includes(b.textContent?.trim() ?? ''))
+            .every((b) => b.disabled),
+        ).toBe(true);
+        // The stakes can still be corrected.
+        await t.type('input[name=stake-front]', '10');
+        await t.click('Done');
+        expect(t.api.saveRound).toHaveBeenCalledWith(
+          'vero',
+          'r1',
+          expect.objectContaining({
+            nassau: {
+              front: 1000,
+              back: 1000,
+              overall: 2000,
+              auto_press: true,
+              press_at: 'dormie',
+            },
+          }),
+        );
+      });
+
+      it('the setup everyone sees says what it is played for and when a press comes', async () => {
+        const row = roundRow({
+          round_formats: [
+            { format_key: 'stroke', settings: {}, sort_order: 0 },
+            {
+              format_key: 'nassau',
+              settings: {
+                stake_front_cents: 500,
+                stake_back_cents: 500,
+                stake_overall_cents: 500,
+                auto_press: true,
+                press_at: 'dormie',
+              },
+              sort_order: 1,
+            },
+          ],
+        });
+        const t = await boot('/trip/rounds/r1', 'player', { live: [row] });
+        expect(t.page().textContent).toContain('$5 each · auto press at dormie');
+      });
+    });
+
+    describe('the day', () => {
+      it('a new round starts today once the trip has begun, never on a day that has passed', () => {
+        // The round that was set up late: the trip's dates were over.
+        expect(newRoundDay('2026-11-21', '2026-11-24', [], '2026-11-27')).toBe('2026-11-27');
+        expect(newRoundDay('2026-11-26', '2026-11-29', ['2026-11-26'], '2026-11-28')).toBe(
+          '2026-11-28',
+        );
+      });
+
+      it('before the trip, it is the first trip day with no round on it', () => {
+        expect(newRoundDay('2027-01-11', '2027-01-15', [], '2026-11-27')).toBe('2027-01-11');
+        expect(
+          newRoundDay('2027-01-11', '2027-01-15', ['2027-01-11', '2027-01-12'], '2026-11-27'),
+        ).toBe('2027-01-13');
+        expect(
+          newRoundDay('2027-01-11', '2027-01-12', ['2027-01-11', '2027-01-12'], '2026-11-27'),
+        ).toBe('2027-01-12');
+      });
+
+      it('says plainly when the day picked has passed', async () => {
+        const t = await boot('/trip/rounds/r1', 'organizer', {
+          live,
+          data: { roundSetup: vi.fn(async () => ({ ...SETUP, play_date: '2026-11-21' })) },
+        });
+        await t.click('Edit');
+        expect(t.page().querySelector('.past')?.textContent?.trim()).toBe(
+          '! Sat, Nov 21 has passed',
+        );
+        await t.type('input[name=day]', '2099-01-01');
+        expect(t.page().querySelector('.past')).toBeNull();
+      });
     });
 
     it('a player without an index shows the "!"; the sheet saves it in place with nothing lost', async () => {

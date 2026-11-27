@@ -9,7 +9,8 @@ import { routes } from './app.routes';
 import { AuthService, Me } from './core/auth';
 import { InstallPlatform, InstallService } from './core/install';
 import { RoundRow, RoundsService, TripRules, roundInput, safeResult } from './core/rounds';
-import { roundRow } from './core/rounds.testing';
+import { nassauRow, roundRow } from './core/rounds.testing';
+import { LaunchService } from './core/launch';
 import { ScoreQueue } from './core/score-queue';
 import { MyTrip, SessionService, TripSession } from './core/session';
 import { SUPABASE } from './core/supabase';
@@ -67,6 +68,10 @@ interface Options {
   rules?: Partial<TripRules>;
   /** Scores still waiting to reach the server. */
   syncing?: number;
+  /** One of them has been waiting more than five seconds. */
+  slow?: boolean;
+  /** Use the real launch rule (opening the app mid-round lands on your hole). Off by default. */
+  launch?: boolean;
   /** The service worker: false for a browser without one. */
   worker?: boolean;
   /** What the organizer data layer answers, where a test needs more than the defaults. */
@@ -183,6 +188,29 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     );
     return true;
   });
+  const reopen = vi.fn(async (roundId: string) => {
+    liveRows.update((rows) =>
+      rows.map((r) => (r.id === roundId ? { ...r, status: 'live' as const } : r)),
+    );
+    return true;
+  });
+  const press = vi.fn(async (roundId: string, game: string, bet: string, afterHole: number) => {
+    liveRows.update((rows) =>
+      rows.map((r) =>
+        r.id !== roundId
+          ? r
+          : {
+              ...r,
+              round_formats: r.round_formats.map((f) =>
+                f.format_key !== game
+                  ? f
+                  : { ...f, presses: [...(f.presses ?? []), { bet, after_hole: afterHole }] },
+              ),
+            },
+      ),
+    );
+    return true;
+  });
   const rounds = {
     tripId: computed(() => session()?.trip.id ?? null),
     rules: computed(() => rules),
@@ -193,8 +221,14 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     unwatch: vi.fn(),
     setScore,
     finalize,
+    reopen,
+    press,
   };
-  const queue = { count: signal(options.syncing ?? 0), refused: signal(0) };
+  const queue = {
+    count: signal(options.syncing ?? 0),
+    slow: signal(options.slow ?? false),
+    refused: signal(0),
+  };
   // The service worker's updates: `ready()` is a new build arriving while the app is open.
   const versions = new Subject<{ type: string }>();
   const updates = {
@@ -242,6 +276,14 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
       { provide: RoundsService, useValue: rounds },
       { provide: ScoreQueue, useValue: queue },
       { provide: SwUpdate, useValue: updates },
+      ...(options.launch
+        ? []
+        : [
+            {
+              provide: LaunchService,
+              useValue: { landed: signal(0), opened: () => {}, loaded: () => {}, seen: () => {} },
+            },
+          ]),
       { provide: AdminData, useValue: data },
       {
         provide: InstallService,
@@ -305,6 +347,9 @@ async function boot(url: string, saved: TripSession | null, options: Options = {
     promptInstall,
     setScore,
     finalize,
+    reopen,
+    press,
+    liveRows,
     updates,
     versions,
     queue,
@@ -951,15 +996,123 @@ describe('App', () => {
       ).toBe(false);
     });
 
-    it('says how many scores are still syncing', async () => {
+    it('saves are silent: no line appears while a score is on its way', async () => {
       const { el, queue, settle } = await boot('/score', ME, { live: [playing()], syncing: 2 });
-      expect(el.querySelector('[role=status]')?.textContent?.trim()).toBe('Syncing 2 scores');
+      expect(el.querySelector('[role=status]')).toBeNull();
+      const before = el.querySelector('ui-stepper-row')!.getBoundingClientRect().top;
+      // More than five seconds with no signal: said, in a spot of its own over the page.
+      queue.slow.set(true);
+      await settle();
+      const line = el.querySelector<HTMLElement>('ui-sync-line')!;
+      expect(line.textContent?.trim()).toBe('2 scores waiting for signal');
+      expect(getComputedStyle(line).position).toBe('absolute');
+      expect(el.querySelector('ui-stepper-row')!.getBoundingClientRect().top).toBe(before);
       queue.count.set(1);
       await settle();
-      expect(el.querySelector('[role=status]')?.textContent?.trim()).toBe('Syncing 1 score');
-      queue.count.set(0);
+      expect(line.textContent?.trim()).toBe('1 score waiting for signal');
+      queue.slow.set(false);
       await settle();
       expect(el.querySelector('[role=status]')).toBeNull();
+    });
+
+    it('a complete round that is not final can still be corrected by anyone in the group', async () => {
+      const done = { me: all(18, 4), dad: all(18, 5), bro: all(18, 5) };
+      const { el, click, setScore, settle } = await boot('/score', ME, { live: [playing(done)] });
+      // Nothing left to score: it opens on the last hole, still editable.
+      expect(el.querySelector('h1')?.textContent).toContain('Hole 18');
+      await click('All holes');
+      await click('7 ✓');
+      stepper(el, 'Dad').querySelector<HTMLButtonElement>('button.plus')!.click();
+      await settle();
+      expect(setScore).toHaveBeenCalledWith('r1', 'dad', 7, 6, false);
+    });
+
+    describe('Nassau', () => {
+      const BRO: TripSession = { ...ME, player: { ...ME.player, id: 'bro' } };
+      const bets = (el: HTMLElement) => el.querySelector('p.bets')?.textContent?.trim();
+      const hasPress = (el: HTMLElement) =>
+        [...el.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Press');
+
+      it('shows the open bets under the hole, from the side of whoever is looking', async () => {
+        const mine = await boot('/score', ME, { live: [nassauRow(5, { play_date: today() })] });
+        expect(bets(mine.el)).toBe('Front 4 down · Overall 4 down');
+        TestBed.resetTestingModule();
+        const his = await boot('/score', BRO, { live: [nassauRow(5, { play_date: today() })] });
+        expect(bets(his.el)).toBe('Front 4 up · Overall 4 up');
+      });
+
+      it('offers Press to the player who lost a bet, never earlier, and never to the winner', async () => {
+        // Dormie on the front after 5, but the round presses when closed out.
+        const early = await boot('/score', ME, { live: [nassauRow(5, { play_date: today() })] });
+        expect(hasPress(early.el)).toBe(false);
+        TestBed.resetTestingModule();
+        const winner = await boot('/score', BRO, { live: [nassauRow(6, { play_date: today() })] });
+        expect(hasPress(winner.el)).toBe(false);
+        TestBed.resetTestingModule();
+        const { el, click, press } = await boot('/score', ME, {
+          live: [nassauRow(6, { play_date: today() })],
+        });
+        expect(bets(el)).toBe('Overall 4 down');
+        await click('Press');
+        const sheet = [...el.querySelectorAll<HTMLElement>('[role=dialog]')].find((d) =>
+          d.textContent?.includes('Holes 7–9'),
+        )!;
+        expect(rowText(sheet.querySelector('[ui-list-row]')!)).toBe('Front Holes 7–9 · $5');
+        await click('Front');
+        expect(press).toHaveBeenCalledWith('r1', 'nassau', 'front', 6);
+        expect(bets(el)).toBe('Front press AS · Overall 4 down');
+        expect(hasPress(el)).toBe(false);
+      });
+
+      it('at dormie the Press is there a hole sooner', async () => {
+        const { el } = await boot('/score', ME, {
+          live: [nassauRow(5, { play_date: today() }, { press_at: 'dormie' })],
+        });
+        expect(hasPress(el)).toBe(true);
+      });
+
+      it('with auto press on, presses start by themselves and there is no button', async () => {
+        const { el } = await boot('/score', ME, {
+          live: [nassauRow(7, { play_date: today() }, { auto_press: true })],
+        });
+        expect(bets(el)).toBe('Front press 1 down · Overall 5 down');
+        expect(hasPress(el)).toBe(false);
+      });
+
+      it('says when a press could not be saved', async () => {
+        const { el, click, press } = await boot('/score', ME, {
+          live: [nassauRow(6, { play_date: today() })],
+        });
+        press.mockResolvedValueOnce(false);
+        await click('Press');
+        await click('Front');
+        expect(el.querySelector('[role=alert]')?.textContent).toContain('needs signal');
+      });
+
+      it('lists every bet with who is ahead', async () => {
+        const { el } = await boot('/score', ME, {
+          live: [nassauRow(18, { play_date: today() }, { auto_press: true })],
+        });
+        const card = [...el.querySelectorAll('ui-game-card')].find((c) =>
+          c.querySelector('h2, .title')?.textContent?.includes('Nassau'),
+        )!;
+        expect([...card.querySelectorAll('dt')].map((d) => d.textContent?.trim())).toEqual([
+          'Front',
+          'Front press',
+          'Front press 2',
+          'Back',
+          'Overall',
+          'Overall press',
+        ]);
+        expect([...card.querySelectorAll('dd')].map((d) => d.textContent?.trim())).toEqual([
+          'Brother 4 & 3',
+          'Brother 2 & 1',
+          'Fritz 1 up',
+          'Halved',
+          'Brother 6 & 5',
+          'Fritz 1 up',
+        ]);
+      });
     });
 
     it('a final round, and someone outside the group, can look but not change', async () => {
@@ -1130,6 +1283,171 @@ describe('App', () => {
 
     it('with no rounds, says so', async () => {
       expect((await boot('/board', ME)).el.textContent).toContain('No rounds yet.');
+    });
+
+    it('a Nassau round: the bets with how each stands, a money column, then the settle-up', async () => {
+      const { el } = await boot('/board', ME, {
+        live: [nassauRow(18, { play_date: today() }, { auto_press: true, press_at: 'dormie' })],
+      });
+      expect(
+        [...el.querySelectorAll('ui-board thead th')].map((th) => th.textContent?.trim()),
+      ).toEqual(['Pos', 'Name', 'Gross', 'Net', 'To par', 'Thru', 'Nassau']);
+      // Brother 77, Fritz 89 less 6.
+      expect(cells(el)).toEqual([
+        ['1', 'Brother', '77', '77', '+5', '18', '−$5.00'],
+        ['2', 'Fritz', '89', '83', '+11', '18', '+$5.00'],
+      ]);
+      const card = el.querySelector('ui-game-card')!;
+      expect([...card.querySelectorAll('dt, dd')].map((d) => d.textContent?.trim())).toEqual([
+        'Front',
+        'Brother 4 & 3',
+        'Front press',
+        'Brother 2 & 1',
+        'Front press 2',
+        'Fritz 1 up',
+        'Back',
+        'Halved',
+        'Back press',
+        'Fritz 2 up',
+        'Back press 2',
+        'Fritz 1 up',
+        'Overall',
+        'Brother 6 & 5',
+        'Overall press',
+        'Fritz 1 up',
+      ]);
+      const settle = el.querySelector('[aria-label="Settle up"]')!;
+      expect(settle.querySelector('.note')?.textContent?.trim()).toBe('If it ended now');
+      expect([...settle.querySelectorAll('ui-list-row')].map((r) => rowText(r))).toEqual([
+        'Fritz +$5.00',
+        'Brother −$5.00',
+        'Brother pays you $5.00',
+      ]);
+    });
+
+    it('an organizer can reopen a final round, after a confirm; a player cannot', async () => {
+      const final = () => [playing(full, { status: 'final' })];
+      const player = await boot('/board', ME, { live: final() });
+      expect(player.el.textContent).not.toContain('Reopen round');
+      TestBed.resetTestingModule();
+      const organizer: TripSession = { ...ME, player: { ...ME.player, role: 'organizer' } };
+      const { el, click, reopen, settle } = await boot('/board', organizer, { live: final() });
+      expect(el.querySelector('[aria-label="Settle up"] .note')?.textContent).toContain('Final');
+      await click('Reopen round');
+      const sheet = [...el.querySelectorAll<HTMLElement>('[role=dialog]')].find((d) =>
+        d.textContent?.includes('Reopen Round 1?'),
+      )!;
+      expect(sheet.textContent).toContain("Scores can be changed until it's finalized again.");
+      expect(reopen).not.toHaveBeenCalled();
+      [...sheet.querySelectorAll('button')]
+        .find((b) => b.textContent?.trim() === 'Reopen round')!
+        .click();
+      await settle();
+      expect(reopen).toHaveBeenCalledWith('r1');
+      // Live again: the money is "if it ended now", and it can be finalized again.
+      expect(el.querySelector('[aria-label="Settle up"] .note')?.textContent).toContain(
+        'If it ended now',
+      );
+      expect(el.querySelector('[aria-label=Finalize]')).toBeTruthy();
+      expect(el.textContent).not.toContain('Reopen round');
+    });
+  });
+
+  describe('Opening the app mid-round', () => {
+    const inPlay = () => [playing({ me: [4, 5], dad: [6, 6], bro: [5] }, { tee_time: null })];
+
+    it('lands on the Scorecard at the next unscored hole', async () => {
+      const { el, router } = await boot('/home', ME, { live: inPlay(), launch: true });
+      expect(router.url).toBe('/score');
+      expect(el.querySelector('h1')?.textContent).toContain('Hole 2');
+    });
+
+    it('lands on the Board once my group’s card is complete', async () => {
+      const done = { me: all(18, 4), dad: all(18, 5), bro: all(18, 5) };
+      const { router } = await boot('/home', ME, {
+        live: [playing(done, { tee_time: null })],
+        launch: true,
+      });
+      expect(router.url).toBe('/board');
+    });
+
+    it('is the normal landing with no round on today, or before one has started', async () => {
+      const idle = await boot('/home', ME, {
+        live: [playing({}, { tee_time: null })],
+        launch: true,
+      });
+      expect(idle.router.url).toBe('/home');
+      TestBed.resetTestingModule();
+      const other = await boot('/home', ME, {
+        live: [roundRow({ play_date: '2020-01-01' }, { me: [4] })],
+        launch: true,
+      });
+      expect(other.router.url).toBe('/home');
+    });
+
+    it('leaves a link straight to another page alone', async () => {
+      const { router } = await boot('/board', ME, { live: inPlay(), launch: true });
+      expect(router.url).toBe('/board');
+    });
+
+    it('never moves someone who is using the app; only on coming back after two minutes away', async () => {
+      const { router, settle, liveRows, el } = await boot('/home', ME, {
+        live: [playing({}, { tee_time: null })],
+        launch: true,
+      });
+      const launch = TestBed.inject(LaunchService);
+      // The round starts while they are looking at Home: nothing moves.
+      liveRows.set(inPlay());
+      await settle();
+      expect(router.url).toBe('/home');
+      // A glance at a text message and back.
+      const now = Date.now();
+      const clock = vi.spyOn(Date, 'now');
+      try {
+        clock.mockReturnValue(now);
+        launch.seen(false);
+        clock.mockReturnValue(now + 60_000);
+        launch.seen(true);
+        await settle();
+        expect(router.url).toBe('/home');
+        // Back after the walk to the next tee.
+        launch.seen(false);
+        clock.mockReturnValue(now + 60_000 + 121_000);
+        launch.seen(true);
+        await settle();
+        expect(router.url).toBe('/score');
+        expect(el.querySelector('h1')?.textContent).toContain('Hole 2');
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
+    it('coming back with the Scorecard open moves it on to the next unscored hole', async () => {
+      const { router, settle, liveRows, el } = await boot('/score', ME, {
+        live: inPlay(),
+        launch: true,
+      });
+      expect(el.querySelector('h1')?.textContent).toContain('Hole 2');
+      // The others finished 2 and 3 on their phones meanwhile.
+      liveRows.set([
+        playing({ me: [4, 5, 4], dad: [6, 6, 5], bro: [5, 5, 5] }, { tee_time: null }),
+      ]);
+      await settle();
+      expect(el.querySelector('h1')?.textContent).toContain('Hole 2');
+      const launch = TestBed.inject(LaunchService);
+      const now = Date.now();
+      const clock = vi.spyOn(Date, 'now');
+      try {
+        clock.mockReturnValue(now);
+        launch.seen(false);
+        clock.mockReturnValue(now + 200_000);
+        launch.seen(true);
+        await settle();
+        expect(router.url).toBe('/score');
+        expect(el.querySelector('h1')?.textContent).toContain('Hole 4');
+      } finally {
+        clock.mockRestore();
+      }
     });
   });
 

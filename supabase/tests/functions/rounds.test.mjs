@@ -47,7 +47,7 @@ async function signIn(name) {
 const ROUND_COLUMNS =
   'id, round_number, play_date, tee_time, status, holes, courses(id, name, short_name, photo_path), ' +
   'tees(id, name, yards, rating, slope, par, stroke_index, hole_yards), ' +
-  'round_formats(format_key, settings, sort_order), ' +
+  'round_formats(id, format_key, settings, sort_order, presses(bet, after_hole)), ' +
   'groups(id, group_number, group_players(position, course_handicap, playing_handicap, ' +
   'tee:tees(id, name, yards, rating, slope, par, stroke_index), ' +
   'player:trip_members(id, name, initials, handicap_index), scores(hole, strokes, picked_up)))';
@@ -260,6 +260,18 @@ test('a round, end to end: set up, scored from two phones live, retried without 
   assert.ok((await enter(dad.client, [score(dadId, 18, 3)])).error, 'a final round is closed to players');
   assert.equal((await enter(fritz.client, [score(dadId, 18, 5)])).error, null, 'the organizer can still fix a score');
 
+  // ── Reopening: organizers only; scores open again; not final again the same day ──
+  assert.ok((await dad.client.rpc('reopen_round', { p_round_id: round })).error, 'a player cannot reopen a round');
+  assert.equal((await fritz.client.rpc('reopen_round', { p_round_id: round })).error, null);
+  assert.equal((await read(dad.client))[0].status, 'live', 'a reopened round is live');
+  assert.equal((await enter(dad.client, [score(dadId, 18, 3)])).error, null, 'and a player in the group can correct a score');
+  await dad.client.rpc('finalize_due_rounds', { p_trip_id: trip });
+  assert.equal((await read(dad.client))[0].status, 'live', 'opening the trip does not finalize it again today');
+  const events = await dad.client.from('round_events').select('kind, member_id').eq('round_id', round);
+  assert.deepEqual(events.data, [{ kind: 'reopened', member_id: fritzId }], 'who reopened it is on record');
+  assert.ok((await dad.client.from('round_events').insert({ round_id: round, kind: 'reopened' })).error, 'which nobody writes by hand');
+  assert.equal((await fritz.client.from('rounds').update({ status: 'final' }).eq('id', round).select('status')).data?.[0]?.status, 'final');
+
   // ── A second round, and deleting the first renumbers it ──
   // Dad plays his own tees in it.
   const forward = palmer.tees.filter((t) => t.rating && t.slope && t.par.length === 18 && t.id !== tee.id).sort((a, b) => a.yards - b.yards)[0];
@@ -299,6 +311,26 @@ test('a round, end to end: set up, scored from two phones live, retried without 
   assert.equal((await fritz.client.rpc('delete_round', { p_round_id: round })).error, null);
   assert.deepEqual((await read(fritz.client)).map((r) => [r.round_number, r.holes]), [[1, 'front']]);
   assert.equal(await count(), 0, 'its scores went with it');
+
+  // ── Nassau: two players, its settings, and a press made by hand ──
+  const stakes = { stake_front_cents: 500, stake_back_cents: 500, stake_overall_cents: 500 };
+  assert.ok((await setup(fritz.client, [fritzId, dadId, brotherId], { p_nine_point: false, p_nassau: stakes })).error, 'Nassau needs exactly two players');
+  const match = await setup(fritz.client, [fritzId, brotherId], { p_nine_point: false, p_point_value_cents: null, p_nassau: stakes });
+  assert.equal(match.error, null, match.error?.message);
+  const nassau = async (client) => (await read(client)).find((r) => r.id === match.data).round_formats.find((f) => f.format_key === 'nassau');
+  const game = await nassau(brother.client);
+  assert.deepEqual(game.settings, { ...stakes, auto_press: false, press_at: 'closed' });
+  assert.deepEqual(game.presses, [], "the app's query brings a game's presses");
+  const matchGroup = (await read(brother.client)).find((r) => r.id === match.data).groups[0].id;
+  const pressed = { round_id: match.data, round_format_id: game.id, group_id: matchGroup, bet: 'front', after_hole: 6 };
+  assert.ok((await dad.client.from('presses').insert(pressed)).error, 'someone not in the match cannot press');
+  assert.equal((await brother.client.from('presses').insert(pressed)).error, null, 'a player in the match presses');
+  assert.equal((await brother.client.from('presses').insert(pressed)).error?.code, '23505', 'the same press again is refused as a duplicate, which the app takes as done');
+  assert.deepEqual((await nassau(fritz.client)).presses, [{ bet: 'front', after_hole: 6 }], 'and the other phone reads it');
+  view = await watch();
+  const watched = view.rounds.find((r) => r.id === match.data);
+  assert.deepEqual(watched.presses.map((p) => [p.bet, p.after_hole]), [['front', 6]], 'spectators get the press');
+  assert.equal((await fritz.client.rpc('delete_round', { p_round_id: match.data })).error, null);
 
   await brother.client.removeChannel(channel);
   for (const who of [fritz, dad, brother, stranger]) await who.client.removeAllChannels();

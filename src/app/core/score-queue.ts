@@ -16,6 +16,8 @@ export interface PendingScore {
 const KEY = 'teed.scores.pending';
 const FIRST_RETRY_MS = 2_000;
 const LAST_RETRY_MS = 30_000;
+/** A score still unsent after this long is worth mentioning: there is probably no signal. */
+export const SLOW_MS = 5_000;
 
 const same = (a: PendingScore, b: PendingScore) =>
   a.round_id === b.round_id && a.player_id === b.player_id && a.hole === b.hole;
@@ -41,6 +43,12 @@ export class ScoreQueue {
 
   readonly pending = signal<PendingScore[]>(this.load());
   readonly count = computed(() => this.pending().length);
+  /**
+   * A score has been waiting more than five seconds. Saves are silent; only this is worth a
+   * note on the scorecard.
+   */
+  readonly slow = signal(false);
+  private slowTimer: ReturnType<typeof setTimeout> | null = null;
   /** How many scores the server refused since the screen last cleared it. */
   readonly refused = signal(0);
   /** Called with scores the server has just confirmed, before they leave the list. */
@@ -63,8 +71,10 @@ export class ScoreQueue {
         window.removeEventListener('online', online);
         document.removeEventListener('visibilitychange', seen);
         this.clearTimer();
+        if (this.slowTimer) clearTimeout(this.slowTimer);
       });
     }
+    this.watchSlow();
     if (this.pending().length) void this.flush();
   }
 
@@ -153,6 +163,20 @@ export class ScoreQueue {
     });
   }
 
+  /** Keeps `slow` true while the oldest waiting score is more than five seconds old. */
+  private watchSlow(): void {
+    if (this.slowTimer) clearTimeout(this.slowTimer);
+    this.slowTimer = null;
+    const pending = this.pending();
+    if (!pending.length) return this.slow.set(false);
+    const due = Math.min(...pending.map((p) => p.at)) + SLOW_MS - Date.now();
+    if (due <= 0) return this.slow.set(true);
+    this.slow.set(false);
+    this.zone.runOutsideAngular(() => {
+      this.slowTimer = setTimeout(() => this.watchSlow(), due);
+    });
+  }
+
   private clearTimer(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
@@ -160,6 +184,7 @@ export class ScoreQueue {
 
   private save(pending: PendingScore[]): void {
     this.pending.set(pending);
+    this.watchSlow();
     try {
       if (pending.length) localStorage.setItem(KEY, JSON.stringify(pending));
       else localStorage.removeItem(KEY);
