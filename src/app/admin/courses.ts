@@ -11,7 +11,7 @@ import { isPlaceholderIndex } from './opengolf';
   template: `
     <ui-header-band title="Course library" back="/you" backLabel="You" />
     <main class="content">
-      <a ui-button routerLink="/admin/courses/add">Add a course</a>
+      <a ui-button routerLink="/courses/add">Add a course</a>
 
       <ui-field label="Search the library">
         <input
@@ -34,7 +34,7 @@ import { isPlaceholderIndex } from './opengolf';
           @for (course of shown(); track course.id) {
             <a
               ui-list-row
-              [routerLink]="['/admin/courses', course.id]"
+              [routerLink]="['/courses', course.id]"
               [title]="course.name"
               [detail]="detail(course)"
               chevron

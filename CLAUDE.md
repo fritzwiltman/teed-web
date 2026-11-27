@@ -20,8 +20,10 @@ hole by hole, and follow live leaderboards; an organizer sets up trips, rounds, 
 ```
 src/                      Angular app
   app/auth/               the sign-in form: email, then the 6-digit code
-  app/player/             sign in, invite, You, trip home, scorecard, hole picker, leaderboard, trip info, spectator link
-  app/admin/              all trips, trip creators, overview, trip details, people, rounds, groups, courses, itinerary, proposals
+  app/player/             sign in, invite, You, the trip shell and its screens: Home, scorecard, board, Trip overview
+                          (itinerary, courses, people, info), a round's page (setup, edited in place), suggested changes,
+                          spectator link
+  app/admin/              the data layer for running trips (data.ts), New trip, Trip creators, the course library
   app/scoring/            pure TypeScript scoring engine: handicaps, strokes, net stroke play, the 9-point game, settle-up (no Angular imports)
   app/core/               supabase client, auth (who is signed in), session (which trip is open), rounds (live rounds and results), score queue, theme
   app/core/ui/            the design system: every card, button, row, tab bar and sheet (ui-*)
@@ -68,6 +70,12 @@ docs/                     notes; wireframes live at the link above
 - **"Live" means a round in play:** at least one score in and not final. Only then the red dot and "Live".
   Trips are Draft, Upcoming, In progress or Final; the organizer "publishes" a trip.
 - **Sheets:** every bottom sheet is `ui-sheet` (drag to dismiss, background locked). No one-off drawers.
+- **One app for everyone.** No organizer mode: organizer powers appear in place on the shared screens, gated by
+  role. Edit sits beside the title of what it edits (`button[ui-edit-pill]`), only where there is something to
+  edit; it becomes a filled Done in the same spot. Things that can't be undone ask in `ui-confirm-sheet`.
+- **Pickers:** no native `<select>`. Up to four choices: `ui-segmented`. More: `ui-picker-sheet` (with search
+  when the list can grow). Dates, times and number keypads stay native (`inputmode="decimal"` for an index).
+- **Disclosure rows** use `ui-list-row`'s `expanded`: the chevron turns from right to down.
 - **Day headers** always read `Label · Ddd, Mon D` (`Round 3 · Sun, Oct 11`, `Travel day · Thu, Oct 8`).
 - **Screens render data, never a format.** Cards, leaderboards and breakdowns take rows that each format plug-in
   supplies. No screen hard-codes Sixes, Nassau or any other format.

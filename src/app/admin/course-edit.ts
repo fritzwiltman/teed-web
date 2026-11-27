@@ -44,7 +44,7 @@ type HoleField = 'par' | 'stroke_index' | 'hole_yards';
   template: `
     <ui-header-band
       [title]="draft()?.name || 'New course'"
-      back="/admin/courses"
+      back="/courses"
       backLabel="Course library"
     />
     <main class="content">
@@ -493,7 +493,8 @@ export class CourseEdit {
       this.removed = [];
       this.gaps.set({ par: false, strokeIndex: false });
       if (course.id) this.draft.set(await this.data.course(id));
-      else await this.router.navigate(['/admin/courses', id], { replaceUrl: true });
+      else if (takeReturn()) await this.router.navigateByUrl(`${takeReturn(true)}?course=${id}`);
+      else await this.router.navigate(['/courses', id], { replaceUrl: true });
       return true;
     } catch (e) {
       this.error.set(e instanceof AdminError ? e.message : "Couldn't save the course.");
@@ -570,7 +571,7 @@ export class CourseEdit {
     if (id === 'new') {
       const pending = this.store.take();
       if (!pending) {
-        await this.router.navigateByUrl('/admin/courses/add', { replaceUrl: true });
+        await this.router.navigateByUrl('/courses/add', { replaceUrl: true });
         return;
       }
       this.draft.set(pending.draft);
@@ -585,3 +586,19 @@ export class CourseEdit {
     }
   }
 }
+
+/**
+ * Where to go once a new course is saved, when a round setup sent us here ("+ Add a course"):
+ * back to that round, with the course picked. `take` clears it.
+ */
+export function takeReturn(take = false): string | null {
+  try {
+    const to = sessionStorage.getItem(COURSE_RETURN);
+    if (take) sessionStorage.removeItem(COURSE_RETURN);
+    return to && to.startsWith('/trip/') ? to : null;
+  } catch {
+    return null;
+  }
+}
+
+export const COURSE_RETURN = 'teed.course-return';

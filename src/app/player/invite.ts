@@ -7,7 +7,7 @@ import { formatDateRange } from '../core/format';
 import { InstallService } from '../core/install';
 import { SessionService } from '../core/session';
 import { SUPABASE } from '../core/supabase';
-import { UiButton, UiSkeleton } from '../core/ui';
+import { UiButton, UiLogo, UiSkeleton } from '../core/ui';
 
 /** What the `invite` function says about a link before the person has signed in. */
 export type InvitePreview =
@@ -35,10 +35,10 @@ interface Joined {
  */
 @Component({
   selector: 'app-invite',
-  imports: [NgTemplateOutlet, RouterLink, SignInForm, UiButton, UiSkeleton],
+  imports: [NgTemplateOutlet, RouterLink, SignInForm, UiButton, UiLogo, UiSkeleton],
   template: `
     <main class="content">
-      <p class="wordmark">teed</p>
+      <ui-logo class="lockup" [size]="40" />
       @if (problem(); as text) {
         <p class="error-text" role="alert">{{ text }}</p>
         <a ui-button variant="outline" routerLink="/">Open Teed</a>
@@ -86,9 +86,8 @@ interface Joined {
         calc(var(--s5) + env(safe-area-inset-bottom));
       gap: var(--s5);
     }
-    .wordmark {
-      font: 700 40px/1 var(--font-heading);
-      color: var(--accent);
+    .lockup {
+      align-self: flex-start;
     }
     .lead {
       font-size: 15px;

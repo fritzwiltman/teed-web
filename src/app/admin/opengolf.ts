@@ -90,6 +90,31 @@ export function isPlaceholderIndex(strokeIndex: number[]): boolean {
 }
 
 /** Turns OpenGolfAPI's course, tees and holes into a course draft, noting what was missing. */
+/** Words in course names that are acronyms, kept in capitals. */
+const ACRONYMS = new Set([
+  'PGA',
+  'TPC',
+  'CC',
+  'GC',
+  'LPGA',
+  'USGA',
+  'RTJ',
+  'ABC',
+  'II',
+  'III',
+  'IV',
+]);
+
+/**
+ * OpenGolf title-cases every word, so "PGA National" arrives as "Pga National". Known acronyms
+ * go back to capitals; everything else is left as it came.
+ */
+export function courseName(name: string): string {
+  return name.replace(/[A-Za-z]+/g, (word) =>
+    ACRONYMS.has(word.toUpperCase()) ? word.toUpperCase() : word,
+  );
+}
+
 export function mapOpenGolf(
   course: OpenGolfCourse,
   tees: OpenGolfTee[],
@@ -133,7 +158,7 @@ export function mapOpenGolf(
 
   return {
     draft: {
-      name: course.name,
+      name: courseName(course.name),
       short_name: null,
       location: [course.city, course.state].filter(Boolean).join(', ') || null,
       architect: course.architect ?? null,

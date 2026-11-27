@@ -49,7 +49,10 @@ export class UiCard {
   readonly link = input<string | readonly unknown[]>();
 }
 
-/** The head of a card: a title, with an optional note and chevron at the right. */
+/**
+ * The head of a card: a title, with an optional note and chevron at the right. Put the Edit pill
+ * (or another small action) inside with the `action` attribute: it sits beside the title.
+ */
 @Component({
   selector: 'ui-section-head',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -62,6 +65,7 @@ export class UiCard {
     @if (chevron()) {
       <ui-icon name="chevron-right" />
     }
+    <ng-content select="[action]" />
   `,
   styles: `
     :host {

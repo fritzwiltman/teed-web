@@ -31,6 +31,18 @@ import {
   UiSwitch,
   UiTabBar,
   UiToast,
+  UiAttention,
+  UiConfirmSheet,
+  UiEditPill,
+  UiIndexSheet,
+  UiLogo,
+  UiPickerSheet,
+  UiSyncLine,
+  UiTeesChip,
+  UiTripSwitcher,
+  PickerOption,
+  SwitcherTrip,
+  TeeOption,
 } from '../core/ui';
 
 // A photo-sized stand-in, so the gallery needs no network: fairway, rough and sky.
@@ -75,6 +87,15 @@ const PHOTO =
     UiSwitch,
     UiTabBar,
     UiToast,
+    UiAttention,
+    UiConfirmSheet,
+    UiEditPill,
+    UiIndexSheet,
+    UiLogo,
+    UiPickerSheet,
+    UiSyncLine,
+    UiTeesChip,
+    UiTripSwitcher,
   ],
   template: `
     <div class="halves">
@@ -95,20 +116,32 @@ const PHOTO =
         <div class="filler">Scroll inside this frame: the band collapses to a compact bar.</div>
       </div>
 
-      <h3>ui-header-band · main with the mode switch</h3>
+      <h3>ui-header-band · trip: the switcher line, and Alert for organizers</h3>
       <div class="frame">
-        <ui-header-band label="Round 2 · Tue, Jan 12" title="Vero Beach 2027" action="Manage" />
+        <ui-header-band
+          switcher
+          label="Southern Pines · Oct 8–12"
+          title="Round 2 · Sat, Oct 10"
+          action="Alert"
+          actionIcon="bell"
+        />
+      </div>
+
+      <h3>ui-header-band · scorecard: the title opens the hole picker</h3>
+      <div class="frame">
+        <ui-header-band switcher label="Round 4 · Mon, Oct 12" title="Hole 7" titleTap />
+      </div>
+
+      <h3>ui-logo</h3>
+      <div class="actions">
+        <ui-logo [size]="40" />
+        <span class="band-swatch"><ui-logo tone="band" [size]="20" /></span>
       </div>
 
       <h3>ui-header-band · sub-page</h3>
       <div class="frame scroll">
         <ui-header-band title="Trip details" back="/dev/ui" backLabel="Overview" />
         <div class="filler">Scroll: the back chevron stays in the compact bar.</div>
-      </div>
-
-      <h3>ui-header-band · organizer</h3>
-      <div class="frame">
-        <ui-header-band label="Organizer · Vero Beach 2027" title="Overview" action="Player view" />
       </div>
 
       <h3>ui-card · ui-section-head · ui-list-row</h3>
@@ -132,6 +165,117 @@ const PHOTO =
         <ui-list-row title="Round 1" value="Final" />
       </ui-card>
 
+      <h3>Edit pill · edit mode · ui-attention</h3>
+      <ui-card aria-label="People">
+        <ui-section-head title="Players · 3">
+          <button
+            ui-edit-pill
+            action
+            [editing]="editing()"
+            (click)="editing.set(!editing())"
+          ></button>
+        </ui-section-head>
+        <ui-list-row title="Fritz" detail="Organizer" value="18.6" [chevron]="editing()" />
+        <ui-list-row title="Charlie" detail="Player" value="19.1" [chevron]="editing()">
+          <ui-attention after-title [reasons]="['No email yet', 'Not paid']" />
+        </ui-list-row>
+        @if (editing()) {
+          <button ui-list-row type="button" icon="plus" title="Add a player"></button>
+        }
+      </ui-card>
+
+      <h3>ui-list-row · disclosure (chevron turns down, 150ms)</h3>
+      <ui-card>
+        <button
+          ui-list-row
+          type="button"
+          title="Blue tees"
+          detail="6,412 yds · 71.2 / 131"
+          [expanded]="open()"
+          (click)="open.set(!open())"
+        ></button>
+        @if (open()) {
+          <ui-list-row title="Front 9" value="36" />
+        }
+      </ui-card>
+
+      <h3>ui-tees-chip (a changed one is bold)</h3>
+      <ui-card>
+        <ui-list-row title="Von" detail="4.2 HCI">
+          <ui-tees-chip
+            [tees]="tees"
+            label="Von's tees"
+            [(value)]="teeA"
+            [changed]="teeA() !== 'silver'"
+          />
+        </ui-list-row>
+        <ui-list-row title="Matt" detail="27.0 HCI">
+          <ui-tees-chip
+            [tees]="tees"
+            label="Matt's tees"
+            [(value)]="teeB"
+            [changed]="teeB() !== 'silver'"
+          />
+        </ui-list-row>
+      </ui-card>
+
+      <h3>ui-picker-sheet · course search</h3>
+      <button ui-button variant="outline" type="button" (click)="picking.set(true)">
+        Pick a course
+      </button>
+      <ui-picker-sheet
+        [(open)]="picking"
+        title="Course"
+        searchable
+        addLabel="+ Add a course"
+        [options]="courses"
+        [value]="course()"
+        (picked)="course.set($event)"
+      />
+
+      <h3>ui-index-sheet</h3>
+      <button ui-button variant="outline" type="button" (click)="indexing.set(true)">
+        Add Charlie's index
+      </button>
+      <ui-index-sheet [(open)]="indexing" name="Charlie" (saved)="indexing.set(false)" />
+
+      <h3>ui-confirm-sheet</h3>
+      <button ui-button variant="outline" type="button" (click)="confirming.set(true)">
+        Delete trip
+      </button>
+      <ui-confirm-sheet
+        [(open)]="confirming"
+        title="Delete Southern Pines 2026?"
+        line="Scores, results, itinerary and photos go away for all 4 players. This can't be undone."
+        action="Delete trip"
+        (confirmed)="confirming.set(false)"
+      />
+
+      <h3>ui-trip-switcher</h3>
+      <button ui-button variant="outline" type="button" (click)="switching.set(true)">
+        Open the switcher
+      </button>
+      <ui-trip-switcher
+        [(open)]="switching"
+        name="Fritz"
+        initial="F"
+        [trips]="switcherTrips"
+        current="sp"
+      />
+
+      <h3>ui-board · plain: the strokes card, like GHIN</h3>
+      <ui-board
+        plain
+        title="Strokes"
+        note="90% · off the low man"
+        [columns]="['CH', 'PH', 'SO']"
+        [valueColumn]="2"
+        [rows]="strokes"
+      />
+
+      <h3>ui-sync-line</h3>
+      <ui-sync-line>Syncing 2 scores</ui-sync-line>
+
       <h3>ui-button</h3>
       <div class="stack">
         <button ui-button type="button">Start scoring</button>
@@ -139,6 +283,8 @@ const PHOTO =
         <button ui-button type="button" disabled>Disabled</button>
         <button ui-button type="button" variant="outline">Outline</button>
         <button ui-button type="button" variant="outline" busy>Saving…</button>
+        <button ui-button type="button" tone="danger">Delete trip</button>
+        <button ui-button type="button" variant="text" tone="danger">Delete round</button>
         <div class="actions">
           <button ui-button type="button" size="small">Small</button>
           <button ui-button type="button" size="small" variant="outline">Small outline</button>
@@ -159,6 +305,8 @@ const PHOTO =
         <ui-badge stage="upcoming" />
         <ui-badge stage="in-progress" />
         <ui-badge stage="final" />
+        <ui-badge stage="live" />
+        <ui-badge stage="complete" />
       </div>
 
       <h3>ui-choice-pills</h3>
@@ -216,12 +364,8 @@ const PHOTO =
       <div class="frame bar"><ui-tab-bar [tabs]="playerTabs" active="home" /></div>
       <h3>ui-tab-bar · player, a live round</h3>
       <div class="frame bar"><ui-tab-bar [tabs]="liveTabs" active="board" /></div>
-      <h3>ui-tab-bar · spectator</h3>
-      <div class="frame bar"><ui-tab-bar [tabs]="spectatorTabs" active="trip" /></div>
-      <h3>ui-tab-bar · organizer</h3>
-      <div class="frame bar">
-        <ui-tab-bar [tabs]="organizerTabs" active="people" label="Organizer" />
-      </div>
+      <h3>ui-tab-bar · spectator: Home and Board</h3>
+      <div class="frame bar"><ui-tab-bar [tabs]="spectatorTabs" active="board" /></div>
 
       <h3>ui-course-card</h3>
       <ui-course-card name="Sandridge Dunes" label="Round 2 · Tue, Jan 12" [photo]="photo" live>
@@ -292,6 +436,9 @@ const PHOTO =
       <div class="frame toast">
         <ui-toast message="Swapped Ben and Thomas" action="Undo" />
       </div>
+      <div class="frame toast">
+        <ui-toast message="New version" action="Reload" />
+      </div>
 
       <h3>ui-sheet</h3>
       <div class="frame sheet">
@@ -336,6 +483,11 @@ const PHOTO =
     </ng-template>
   `,
   styles: `
+    .band-swatch {
+      padding: 6px 12px;
+      border-radius: var(--radius-chip);
+      background: var(--band);
+    }
     .halves {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
@@ -424,6 +576,39 @@ export class UiGallery {
     { value: '9', label: 'Front 9' },
   ];
   protected readonly sheet = signal(false);
+  protected readonly editing = signal(false);
+  protected readonly open = signal(false);
+  protected readonly picking = signal(false);
+  protected readonly indexing = signal(false);
+  protected readonly confirming = signal(false);
+  protected readonly switching = signal(false);
+  protected readonly course = signal<string | null>('palmer');
+  protected readonly teeA = signal<string | null>('silver');
+  protected readonly teeB = signal<string | null>('white');
+  protected readonly tees: TeeOption[] = [
+    { id: 'gold', name: 'Gold', yards: 6640, rating: 72.4, slope: 134 },
+    { id: 'silver', name: 'Silver', yards: 6180, rating: 70.3, slope: 128 },
+    { id: 'white', name: 'White', yards: 5720, rating: 68.1, slope: 121 },
+    { id: 'red', name: 'Red', yards: 5050, rating: 64.9, slope: 112 },
+  ];
+  protected readonly courses: PickerOption[] = [
+    {
+      value: 'palmer',
+      title: 'PGA National Resort Palmer Course',
+      detail: 'Palm Beach Gardens, FL',
+    },
+    { value: 'dunes', title: 'Palmetto Dunes · Arthur Hills', detail: 'Hilton Head Island, SC' },
+    { value: 'par3', title: 'Palm Beach Par 3', detail: 'Palm Beach, FL' },
+  ];
+  protected readonly switcherTrips: SwitcherTrip[] = [
+    { id: 'sp', name: 'Southern Pines 2026', detail: 'Oct 8–12 · now' },
+    { id: 'vero', name: 'Vero Beach 2027', detail: 'Jan 14–17' },
+  ];
+  protected readonly strokes: BoardRow[] = [
+    { pos: '', name: 'Von', detail: '4.2 HCI', cells: ['4', '4', '0'] },
+    { pos: '', name: 'Fritz', detail: '15.8 HCI', cells: ['17', '15', '11'] },
+    { pos: '', name: 'Matt', detail: '27.0 HCI · White tees', cells: ['29', '26', '22'] },
+  ];
   protected readonly on = signal(true);
   protected readonly ticked = signal(true);
   protected readonly scoreA = signal(3);
@@ -438,13 +623,9 @@ export class UiGallery {
   protected readonly liveTabs: Tab[] = this.playerTabs.map((tab) =>
     tab.key === 'board' ? { ...tab, live: true } : tab,
   );
-  protected readonly spectatorTabs: Tab[] = this.playerTabs.filter((tab) => tab.key !== 'score');
-  protected readonly organizerTabs: Tab[] = [
-    { key: 'overview', label: 'Overview', icon: 'overview', link: '/dev/ui' },
-    { key: 'rounds', label: 'Rounds', icon: 'flag', link: '/dev/ui' },
-    { key: 'people', label: 'People', icon: 'people', link: '/dev/ui' },
-    { key: 'itinerary', label: 'Itinerary', icon: 'calendar', link: '/dev/ui' },
-  ];
+  protected readonly spectatorTabs: Tab[] = this.playerTabs.filter(
+    (tab) => tab.key === 'home' || tab.key === 'board',
+  );
 
   protected readonly board: BoardRow[] = [
     { pos: '1', name: 'Ben', value: '-3', thru: '14', under: true },
@@ -471,6 +652,9 @@ export class UiGallery {
     'calendar',
     'chevron-left',
     'chevron-right',
+    'chevron-down',
+    'search',
+    'bell',
     'check',
     'x',
     'plus',
