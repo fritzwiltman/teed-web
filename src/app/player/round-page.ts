@@ -1,8 +1,16 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { COURSE_RETURN } from '../admin/course-edit';
-import { AdminData, AdminError, CourseChoice, RosterPlayer, RoundSetupFields } from '../admin/data';
-import { formatDay, formatName, formatTime } from '../core/format';
+import {
+  AdminData,
+  AdminError,
+  CourseChoice,
+  NASSAU_DEFAULT,
+  NassauFields,
+  RosterPlayer,
+  RoundSetupFields,
+} from '../admin/data';
+import { formatDay, formatName, formatTime, localDate } from '../core/format';
 import { RoundsService } from '../core/rounds';
 import { SessionService } from '../core/session';
 import {
@@ -27,7 +35,7 @@ import {
   UiTeesChip,
   teeDetail,
 } from '../core/ui';
-import { pointValueText } from '../scoring';
+import { moneyText, pointValueText } from '../scoring';
 
 const HOLES = { '18': '18 holes', front: 'Front 9', back: 'Back 9' };
 const POINT_VALUES = [25, 50, 100];
@@ -123,6 +131,11 @@ const DRAFT_KEY = 'teed.round-draft';
                 />
               </ui-field>
             </div>
+            @if (pastDay()) {
+              <p class="past" role="status">
+                <span class="mark" aria-hidden="true">!</span> {{ pastDay() }} has passed
+              </p>
+            }
           </ui-card>
 
           <ui-card aria-label="Players">
@@ -190,6 +203,93 @@ const DRAFT_KEY = 'teed.round-draft';
                   (valueChange)="set('point_value_cents', $event ?? 50)"
                 />
               </ui-list-row>
+            }
+            <label
+              ui-list-row
+              title="Nassau"
+              [detail]="twosome() ? null : 'For a group of exactly 2'"
+            >
+              <ui-switch
+                label="Nassau"
+                [checked]="!!f().nassau && twosome()"
+                [disabled]="!twosome()"
+                (checkedChange)="setNassau($event)"
+              />
+            </label>
+            @if (twosome() && f().nassau; as n) {
+              @if (customStakes()) {
+                <div class="stakes three">
+                  <ui-field label="Front ($)">
+                    <input
+                      name="stake-front"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      [value]="stakes().front"
+                      (input)="setStake('front', text($event))"
+                    />
+                  </ui-field>
+                  <ui-field label="Back ($)">
+                    <input
+                      name="stake-back"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      [value]="stakes().back"
+                      (input)="setStake('back', text($event))"
+                    />
+                  </ui-field>
+                  <ui-field label="Overall ($)">
+                    <input
+                      name="stake-overall"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      [value]="stakes().overall"
+                      (input)="setStake('overall', text($event))"
+                    />
+                  </ui-field>
+                </div>
+              } @else {
+                <div class="stakes pair">
+                  <ui-field label="Each ($)">
+                    <input
+                      name="stake-each"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      [value]="stakes().front"
+                      (input)="setEach(text($event))"
+                    />
+                  </ui-field>
+                  <button
+                    ui-button
+                    type="button"
+                    variant="text"
+                    class="customize"
+                    (click)="customStakes.set(true)"
+                  >
+                    Customize
+                  </button>
+                </div>
+              }
+              <ui-list-row title="Press when">
+                <ui-segmented
+                  label="Press when"
+                  [options]="pressChoices"
+                  [value]="n.press_at"
+                  [disabled]="scored()"
+                  (valueChange)="setPress('press_at', $event ?? 'closed')"
+                />
+              </ui-list-row>
+              <label
+                ui-list-row
+                title="Auto press"
+                [detail]="scored() ? 'Set before the round' : null"
+              >
+                <ui-switch
+                  label="Auto press"
+                  [checked]="n.auto_press"
+                  [disabled]="scored()"
+                  (checkedChange)="setPress('auto_press', $event)"
+                />
+              </label>
             }
           </ui-card>
 
@@ -296,6 +396,29 @@ const DRAFT_KEY = 'teed.round-draft';
     .when {
       padding: 0 var(--s4) var(--s4);
     }
+    .stakes {
+      padding: 0 var(--s4) var(--s4);
+    }
+    .stakes.three {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--s3);
+    }
+    .customize {
+      align-self: end;
+      justify-self: start;
+    }
+    .past {
+      display: flex;
+      align-items: center;
+      gap: var(--s2);
+      padding: 0 var(--s4) var(--s4);
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .past .mark {
+      cursor: default;
+    }
     .column {
       font-size: 12px;
       font-weight: 600;
@@ -355,6 +478,11 @@ export class RoundPage {
   protected readonly deleting = signal(false);
   protected readonly indexFor = signal<RosterPlayer | null>(null);
   protected readonly indexError = signal<string | null>(null);
+  /** Someone has a score in this round: auto press and when a press comes are settled. */
+  protected readonly scored = signal(false);
+  /** The Nassau's stakes as typed, in dollars. "Each" fills all three until Customize. */
+  protected readonly stakes = signal({ front: '5', back: '5', overall: '5' });
+  protected readonly customStakes = signal(false);
 
   protected readonly f = signal<RoundSetupFields>({
     course_id: '',
@@ -372,6 +500,10 @@ export class RoundPage {
     { value: '18', label: '18' },
     { value: 'front', label: 'Front 9' },
     { value: 'back', label: 'Back 9' },
+  ];
+  protected readonly pressChoices: Choice<NassauFields['press_at']>[] = [
+    { value: 'closed', label: 'Closed out' },
+    { value: 'dormie', label: 'Dormie' },
   ];
   protected readonly pointChoices: Choice<number>[] = POINT_VALUES.map((cents) => ({
     value: cents,
@@ -406,6 +538,12 @@ export class RoundPage {
     this.tees().map((t) => ({ value: t.id, title: t.name, detail: teeDetail(t) })),
   );
   protected readonly threesome = computed(() => this.f().player_ids.length === 3);
+  protected readonly twosome = computed(() => this.f().player_ids.length === 2);
+  /** "Sat, Nov 21" when the day picked is before today, so a slip is seen and fixed. */
+  protected readonly pastDay = computed(() => {
+    const day = this.f().play_date;
+    return day && day < localDate() ? formatDay(day) : '';
+  });
   protected readonly ready = computed(() => {
     const f = this.f();
     return !!f.course_id && !!f.tee_id && !!f.play_date && f.player_ids.length > 0;
@@ -449,7 +587,12 @@ export class RoundPage {
       const cents = Number(f.settings?.['point_value_cents']);
       return {
         name: formatName(f.format_key),
-        value: cents > 0 ? `${pointValueText(cents)} a point` : '',
+        value:
+          f.format_key === 'nassau'
+            ? nassauLine(f.settings ?? {})
+            : cents > 0
+              ? `${pointValueText(cents)} a point`
+              : '',
       };
     });
   });
@@ -531,6 +674,52 @@ export class RoundPage {
     this.error.set(null);
   }
 
+  protected setNassau(on: boolean): void {
+    this.set('nassau', on ? { ...NASSAU_DEFAULT } : null);
+    if (on) this.showStakes(NASSAU_DEFAULT);
+  }
+
+  protected setPress<K extends 'auto_press' | 'press_at'>(key: K, value: NassauFields[K]): void {
+    const nassau = this.f().nassau;
+    if (nassau) this.set('nassau', { ...nassau, [key]: value });
+  }
+
+  /** "Each": one amount for the front, the back and the overall. */
+  protected setEach(text: string): void {
+    this.stakes.set({ front: text, back: text, overall: text });
+    this.error.set(null);
+  }
+
+  protected setStake(side: 'front' | 'back' | 'overall', text: string): void {
+    this.stakes.update((s) => ({ ...s, [side]: text }));
+    this.error.set(null);
+  }
+
+  /** Puts a Nassau's stakes in the fields: one amount when all three match. */
+  private showStakes(n: NassauFields): void {
+    const dollars = (cents: number) => String(cents / 100);
+    this.stakes.set({
+      front: dollars(n.front),
+      back: dollars(n.back),
+      overall: dollars(n.overall),
+    });
+    this.customStakes.set(n.front !== n.back || n.back !== n.overall);
+  }
+
+  /** The stakes typed, in cents. Null when one isn't an amount in dollars and cents. */
+  private stakeCents(): { front: number; back: number; overall: number } | null {
+    const cents = (text: string) => {
+      const value = Number(text.trim().replace(/^\$/, ''));
+      const whole = Math.round(value * 100);
+      return text.trim() === '' || !Number.isFinite(value) || value < 0 ? null : whole;
+    };
+    const typed = this.stakes();
+    const front = cents(typed.front);
+    const back = cents(typed.back);
+    const overall = cents(typed.overall);
+    return front === null || back === null || overall === null ? null : { front, back, overall };
+  }
+
   /** A new course: its only tees if it has one set, else none until picked; everyone back on them. */
   protected setCourse(courseId: string): void {
     const tees = this.courses().find((c) => c.id === courseId)?.tees ?? [];
@@ -590,7 +779,13 @@ export class RoundPage {
     try {
       sessionStorage.setItem(
         DRAFT_KEY,
-        JSON.stringify({ round: this.roundId() ?? 'new', fields: this.f() }),
+        JSON.stringify({
+          round: this.roundId() ?? 'new',
+          fields: {
+            ...this.f(),
+            nassau: this.f().nassau && { ...this.f().nassau, ...(this.stakeCents() ?? {}) },
+          },
+        }),
       );
     } catch {
       // storage unavailable: the form starts over
@@ -633,9 +828,16 @@ export class RoundPage {
     this.error.set(null);
     try {
       const f = this.f();
+      const playsNassau = !!f.nassau && this.twosome();
+      const stakes = playsNassau ? this.stakeCents() : null;
+      if (playsNassau && !stakes) {
+        this.error.set('A stake is an amount in dollars.');
+        return;
+      }
       const id = await this.data.saveRound(tripId, this.roundId() ?? null, {
         ...f,
         nine_point: f.nine_point && this.threesome(),
+        nassau: playsNassau ? { ...f.nassau!, ...stakes! } : null,
       });
       await this.live.load(tripId);
       this.editing.set(false);
@@ -691,27 +893,36 @@ export class RoundPage {
           .filter((id, i, all) => id && all.indexOf(id) === i),
       );
       if (round) {
-        const { id: _id, round_number, status: _status, scored: _scored, ...fields } = round;
+        const { id: _id, round_number, status: _status, scored, ...fields } = round;
         this.number.set(round_number);
+        this.scored.set(scored);
         this.f.set({ ...fields, point_value_cents: fields.point_value_cents || lastValue || 50 });
+        if (fields.nassau) this.showStakes(fields.nassau);
       } else {
-        // A new round: the day after the last one (or the trip's first day), the last group,
-        // and the point value the trip last played for.
+        // A new round: today while the trip is on (or over), else the first trip day with no
+        // round; the last group, its game, and the point value the trip last played for.
         const last = rounds.at(-1);
         const previous = last ? await this.data.roundSetup(last.id) : null;
-        const day = last ? nextDay(last.play_date) : trip.start_date;
+        this.scored.set(false);
+        const day = newRoundDay(
+          trip.start_date,
+          trip.end_date,
+          rounds.map((r) => r.play_date),
+        );
         const players = previous?.player_ids ?? (roster.length <= 4 ? roster.map((p) => p.id) : []);
         this.f.set({
           course_id: '',
           tee_id: '',
           holes: '18',
-          play_date: day > trip.end_date ? trip.end_date : day,
+          play_date: day,
           tee_time: null,
           player_ids: players,
           player_tees: {},
           nine_point: previous ? previous.nine_point : players.length === 3,
           point_value_cents: lastValue ?? 50,
+          nassau: previous?.nassau && players.length === 2 ? previous.nassau : null,
         });
+        if (previous?.nassau) this.showStakes(previous.nassau);
       }
       this.restoreDraft();
     } catch (e) {
@@ -729,7 +940,10 @@ export class RoundPage {
         fields: RoundSetupFields;
       } | null;
       sessionStorage.removeItem(DRAFT_KEY);
-      if (saved && saved.round === (this.roundId() ?? 'new')) this.f.set(saved.fields);
+      if (saved && saved.round === (this.roundId() ?? 'new')) {
+        this.f.set(saved.fields);
+        if (saved.fields.nassau) this.showStakes(saved.fields.nassau);
+      }
     } catch {
       // nothing saved
     }
@@ -737,6 +951,33 @@ export class RoundPage {
     if (course && this.courses().some((c) => c.id === course)) this.setCourse(course);
     if (course) void this.router.navigate([], { relativeTo: this.route, replaceUrl: true });
   }
+}
+
+/**
+ * The day a new round starts on: today once the trip has begun (a round added during or after
+ * the trip is being played now), else the trip's first day with no round on it. Never a day
+ * that has passed.
+ */
+export function newRoundDay(
+  start: string,
+  end: string,
+  taken: string[],
+  today = localDate(),
+): string {
+  if (today >= start) return today;
+  for (let day = start; day <= end; day = nextDay(day)) if (!taken.includes(day)) return day;
+  return end;
+}
+
+/** "$5 · $5 · $5 · auto press when closed out" */
+function nassauLine(settings: Record<string, unknown>): string {
+  const stake = (key: string) => moneyText(Number(settings[key]) || 0).replace('.00', '');
+  const stakes = ['stake_front_cents', 'stake_back_cents', 'stake_overall_cents'].map(stake);
+  const when = settings['press_at'] === 'dormie' ? 'at dormie' : 'when closed out';
+  return [
+    stakes.every((s) => s === stakes[0]) ? `${stakes[0]} each` : stakes.join(' · '),
+    `${settings['auto_press'] === true ? 'auto press' : 'press'} ${when}`,
+  ].join(' · ');
 }
 
 function nextDay(date: string): string {

@@ -5,6 +5,7 @@ import {
   roundStrokes,
   strokesReceived,
 } from './handicap';
+import { NassauBet, nassau, nassauSettings } from './nassau';
 import { ninePoint } from './nine-point';
 import { fewestPayments, ninePointNets } from './settle';
 import { holesInPlay, netDoubleBogey, strokesByHole } from './strokes';
@@ -80,7 +81,15 @@ export interface GameResult {
   total: Record<string, number>;
   /** Holes that count so far. */
   holesCounted: number;
-  settle: { pointValueCents: number; nets: Record<string, number>; payments: Payment[] } | null;
+  /**
+   * What `total` counts: points (the default), money in cents, or bets up and down. A board
+   * writes money as "+$5.00" and bets as "+2".
+   */
+  unit?: 'points' | 'money' | 'bets';
+  /** A match game's bets (Nassau: front, back, overall and their presses), in order. */
+  bets?: NassauBet[];
+  /** The money, when it is played for some. A points game says what a point is worth. */
+  settle: { pointValueCents?: number; nets: Record<string, number>; payments: Payment[] } | null;
 }
 
 export interface RoundResult {
@@ -203,6 +212,30 @@ export function scoreRound(input: RoundInput): RoundResult {
       total: game.total,
       holesCounted: game.completed.length,
       settle: nets && { pointValueCents: value, nets, payments: fewestPayments(nets) },
+    });
+  }
+
+  const match = input.formats.find((f) => f.key === 'nassau');
+  if (match && players.length === 2 && received.every((n) => n != null)) {
+    const byHole = new Map(holeResults.map((h) => [h.hole, h]));
+    const game = nassau(
+      [players[0].id, players[1].id],
+      holes,
+      (id, hole) => byHole.get(hole)!.standing[id],
+      nassauSettings(match.settings),
+      match.presses ?? [],
+    );
+    const zero = { [players[0].id]: 0, [players[1].id]: 0 };
+    games.push({
+      key: 'nassau',
+      label: game.nets ? 'Nassau' : 'Bets',
+      out: zero,
+      in: zero,
+      total: game.nets ?? game.betsUp,
+      holesCounted: game.holesCounted,
+      unit: game.nets ? 'money' : 'bets',
+      bets: game.bets,
+      settle: game.nets && { nets: game.nets, payments: fewestPayments(game.nets) },
     });
   }
 

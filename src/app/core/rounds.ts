@@ -28,7 +28,14 @@ export interface RoundRow {
     stroke_index: number[];
     hole_yards: number[] | null;
   } | null;
-  round_formats: { format_key: string; settings: Record<string, unknown>; sort_order: number }[];
+  round_formats: {
+    id?: string;
+    format_key: string;
+    settings: Record<string, unknown>;
+    sort_order: number;
+    /** Presses made by hand in a match game. */
+    presses?: { bet: string; after_hole: number }[];
+  }[];
   groups: {
     id: string;
     group_number: number;
@@ -75,7 +82,7 @@ const KEY = 'teed.rounds';
 const ROUND_COLUMNS =
   'id, round_number, play_date, tee_time, status, holes, courses(id, name, short_name, photo_path), ' +
   'tees(id, name, yards, rating, slope, par, stroke_index, hole_yards), ' +
-  'round_formats(format_key, settings, sort_order), ' +
+  'round_formats(id, format_key, settings, sort_order, presses(bet, after_hole)), ' +
   'groups(id, group_number, group_players(position, course_handicap, playing_handicap, ' +
   'tee:tees(id, name, yards, rating, slope, par, stroke_index), ' +
   'player:trip_members(id, name, initials, handicap_index), scores(hole, strokes, picked_up)))';
@@ -145,7 +152,11 @@ export function roundInput(row: RoundRow, rules: TripRules, pending: PendingScor
     formats: row.round_formats
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((f) => ({ key: f.format_key, settings: f.settings ?? {} })),
+      .map((f) => ({
+        key: f.format_key,
+        settings: f.settings ?? {},
+        presses: (f.presses ?? []).map((p) => ({ bet: p.bet, afterHole: p.after_hole })),
+      })),
   };
 }
 
@@ -173,6 +184,7 @@ export class RoundsService {
 
   private readonly loaded = signal<Loaded | null>(this.restore());
   private channel: RealtimeChannel | null = null;
+  private pressChannel: RealtimeChannel | null = null;
   private watching: string | null = null;
 
   /** The trip whose rounds are in hand. */
@@ -276,6 +288,14 @@ export class RoundsService {
             // (Re)connected: catch up on anything missed while away.
             if (status === 'SUBSCRIBED') void this.load(tripId);
           });
+        // A press made on another phone, on a channel of its own: if presses aren't published
+        // yet (the migration not run), that must not cost the scores their channel.
+        this.pressChannel = this.db
+          .channel(`trip-${tripId}-presses`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'presses' }, () => {
+            void this.load(tripId);
+          })
+          .subscribe();
       } catch {
         // No Realtime: the screens still load and reload.
       }
@@ -285,7 +305,9 @@ export class RoundsService {
 
   unwatch(): void {
     if (this.channel) void this.db.removeChannel(this.channel);
+    if (this.pressChannel) void this.db.removeChannel(this.pressChannel);
     this.channel = null;
+    this.pressChannel = null;
     this.watching = null;
   }
 
@@ -310,6 +332,58 @@ export class RoundsService {
         .select('id');
       if (error || !data?.length) return false;
       this.patchRound(roundId, (row) => ({ ...row, status: 'final' }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** An organizer sets a final round back to live, so its scores can be corrected. */
+  async reopen(roundId: string): Promise<boolean> {
+    try {
+      const { error } = await this.db.rpc('reopen_round', { p_round_id: roundId });
+      if (error) return false;
+      this.patchRound(roundId, (row) => ({ ...row, status: 'live' }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Presses a bet in a match game, starting on the hole after `afterHole`. Needs signal: false
+   * when the server can't be reached or refuses. Pressing the same bet twice is one press.
+   */
+  async press(roundId: string, game: string, bet: string, afterHole: number): Promise<boolean> {
+    const row = this.loaded()?.rounds.find((r) => r.id === roundId);
+    const format = row?.round_formats.find((f) => f.format_key === game);
+    const group = row?.groups[0];
+    if (!format?.id || !group) return false;
+    try {
+      const { error } = await this.db.from('presses').insert({
+        round_id: roundId,
+        round_format_id: format.id,
+        group_id: group.id,
+        bet,
+        after_hole: afterHole,
+      });
+      if (error && error.code !== '23505') return false;
+      this.patchRound(roundId, (r) => ({
+        ...r,
+        round_formats: r.round_formats.map((f) =>
+          f.format_key !== game
+            ? f
+            : {
+                ...f,
+                presses: [
+                  ...(f.presses ?? []).filter(
+                    (p) => !(p.bet === bet && p.after_hole === afterHole),
+                  ),
+                  { bet, after_hole: afterHole },
+                ],
+              },
+        ),
+      }));
       return true;
     } catch {
       return false;

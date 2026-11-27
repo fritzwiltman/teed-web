@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
+import { formatName } from '../core/format';
 import { RoundView, RoundsService } from '../core/rounds';
 import { SessionService } from '../core/session';
 import {
@@ -8,6 +9,8 @@ import {
   UiButton,
   UiCard,
   UiChoicePills,
+  UiConfirmSheet,
+  UiGameCard,
   UiListRow,
   UiSectionHead,
   UiSkeleton,
@@ -15,6 +18,7 @@ import {
 import {
   BoardTable,
   SettleUp,
+  matchCards,
   pointValueText,
   roundBoard,
   roundNets,
@@ -63,6 +67,8 @@ export function settleFor(
     UiButton,
     UiCard,
     UiChoicePills,
+    UiConfirmSheet,
+    UiGameCard,
     UiListRow,
     UiSectionHead,
     UiSkeleton,
@@ -102,6 +108,9 @@ export function settleFor(
             [rows]="table().rows"
             [live]="r.result.state === 'live'"
           />
+          @for (match of matches(); track match.title) {
+            <ui-game-card [title]="match.title" [note]="match.note" [rows]="match.rows" />
+          }
         } @else {
           <ui-board
             title="Trip"
@@ -125,6 +134,32 @@ export function settleFor(
             }
           </ui-card>
         }
+
+        @if (round(); as r) {
+          @if (r.result.state === 'final' && sessions.canManage()) {
+            <button
+              ui-button
+              type="button"
+              variant="text"
+              class="center"
+              (click)="reopening.set(true)"
+            >
+              Reopen round
+            </button>
+            @if (error(); as text) {
+              <p class="error-text" role="alert">{{ text }}</p>
+            }
+            <ui-confirm-sheet
+              [(open)]="reopening"
+              [title]="'Reopen Round ' + r.row.round_number + '?'"
+              line="Scores can be changed until it's finalized again."
+              action="Reopen round"
+              tone="normal"
+              [busy]="finalizing()"
+              (confirmed)="reopen(r)"
+            />
+          }
+        }
       } @else if (loading()) {
         <ui-skeleton shape="block" height="260px" />
       } @else {
@@ -147,6 +182,7 @@ export class Board {
   protected readonly loading = signal(true);
   protected readonly finalizing = signal(false);
   protected readonly error = signal<string | null>(null);
+  protected readonly reopening = signal(false);
 
   protected readonly views = computed(() => this.rounds.for(this.session()?.trip.id));
   protected readonly shown = computed<Shown>(() => {
@@ -184,6 +220,20 @@ export class Board {
     const round = this.round();
     const nets = round ? roundNets(round.result) : tripNets(this.views().map((r) => r.result));
     return settleFor(nets, this.views(), this.me());
+  });
+
+  /** A match game's bets: "Front · Fritz 2 & 1", "Front press · AS", "Back · Halved". */
+  protected readonly matches = computed(() => {
+    const round = this.round();
+    if (!round) return [];
+    return matchCards(round.result).map((m) => {
+      const thru = round.result.games.find((g) => g.key === m.key)?.holesCounted ?? 0;
+      return {
+        title: formatName(m.key),
+        note: round.result.state === 'final' ? 'Final' : `Thru ${thru}`,
+        rows: m.rows,
+      };
+    });
   });
 
   /** "If it ended now · 50¢ a point" until the round is final; then "Final · 50¢ a point". */
@@ -225,5 +275,16 @@ export class Board {
     const done = await this.rounds.finalize(r.row.id);
     if (!done) this.error.set("Couldn't finalize the round. Check your signal and try again.");
     this.finalizing.set(false);
+  }
+
+  /** Sets a final round back to live so a score can be corrected. */
+  protected async reopen(r: RoundView): Promise<void> {
+    if (this.finalizing()) return;
+    this.finalizing.set(true);
+    this.error.set(null);
+    const done = await this.rounds.reopen(r.row.id);
+    if (!done) this.error.set("Couldn't reopen the round. Check your signal and try again.");
+    this.finalizing.set(false);
+    this.reopening.set(false);
   }
 }

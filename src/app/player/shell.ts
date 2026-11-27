@@ -3,6 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { AuthService } from '../core/auth';
+import { LaunchService } from '../core/launch';
 import { RoundsService } from '../core/rounds';
 import { SessionService } from '../core/session';
 import { Tab, UiTabBar } from '../core/ui';
@@ -28,6 +29,7 @@ export class Shell {
   private readonly sessions = inject(SessionService);
   private readonly router = inject(Router);
   private readonly rounds = inject(RoundsService);
+  private readonly launch = inject(LaunchService);
 
   protected readonly tabs = signal(TABS);
 
@@ -52,9 +54,16 @@ export class Shell {
     // The open trip's rounds and scores, kept live for every tab.
     effect(() => {
       const tripId = this.sessions.session()?.trip.id;
-      if (tripId) void this.rounds.watch(tripId);
+      if (tripId) void this.rounds.watch(tripId).then(() => this.launch.loaded());
       else this.rounds.unwatch();
     });
-    inject(DestroyRef).onDestroy(() => this.rounds.unwatch());
+    // Opening the app mid-round lands on your hole; so does coming back to it after a while.
+    this.launch.opened();
+    const seen = () => this.launch.seen(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', seen);
+    inject(DestroyRef).onDestroy(() => {
+      document.removeEventListener('visibilitychange', seen);
+      this.rounds.unwatch();
+    });
   }
 }

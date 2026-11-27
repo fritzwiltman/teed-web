@@ -40,6 +40,17 @@ export function pointValueText(cents: number): string {
   return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`;
 }
 
+/** '+2', '−1', '0': bets up and down. */
+function signedText(value: number): string {
+  return value > 0 ? `+${value}` : value < 0 ? `−${-value}` : '0';
+}
+
+/** A game's total as a board writes it: points as they are, money and bets with a sign. */
+function gameCell(unit: GameResult['unit'], value: number): string {
+  if (unit === 'money') return moneyText(value, true);
+  return unit === 'bets' ? signedText(value) : String(value);
+}
+
 /** Positions for values sorted best first: '1', 'T2', 'T2', '4'. */
 function positions<T>(sorted: T[], value: (row: T) => number): string[] {
   return sorted.map((row) => {
@@ -60,7 +71,7 @@ export function roundBoard(round: RoundResult, me?: string | null): BoardTable {
     p.thru && p.net != null ? String(p.net) : '–',
     p.thru ? toParText(p.toPar) : '–',
     p.thru ? String(p.thru) : '–',
-    ...round.games.map((g) => (g.holesCounted ? String(g.total[p.id] ?? 0) : '–')),
+    ...round.games.map((g) => (g.holesCounted ? gameCell(g.unit, g.total[p.id] ?? 0) : '–')),
   ];
   return {
     columns: ['Gross', 'Net', 'To par', 'Thru', ...round.games.map((g) => g.label)],
@@ -97,8 +108,14 @@ export function tripBoard(rounds: RoundResult[], me?: string | null): BoardTable
   }
   const totals = new Map<string, Total>();
   const gameLabels = new Map<string, string>();
+  const gameUnits = new Map<string, GameResult['unit']>();
   for (const round of rounds) {
-    for (const game of round.games) if (game.holesCounted) gameLabels.set(game.key, game.label);
+    for (const game of round.games)
+      if (game.holesCounted) {
+        // One column per game and unit: a Nassau for money and one for nothing don't add up.
+        gameLabels.set(columnKey(game), game.label);
+        gameUnits.set(columnKey(game), game.unit);
+      }
     for (const p of round.players) {
       const total = totals.get(p.id) ?? {
         id: p.id,
@@ -117,7 +134,8 @@ export function tripBoard(rounds: RoundResult[], me?: string | null): BoardTable
         total.toPar += p.toPar;
       }
       for (const game of round.games)
-        total.games[game.key] = (total.games[game.key] ?? 0) + (game.total[p.id] ?? 0);
+        total.games[columnKey(game)] =
+          (total.games[columnKey(game)] ?? 0) + (game.total[p.id] ?? 0);
     }
   }
   const all = [...totals.values()];
@@ -134,7 +152,7 @@ export function tripBoard(rounds: RoundResult[], me?: string | null): BoardTable
           String(t.gross),
           String(t.net),
           toParText(t.toPar),
-          ...keys.map((k) => String(t.games[k] ?? 0)),
+          ...keys.map((k) => gameCell(gameUnits.get(k), t.games[k] ?? 0)),
         ]
       : ['–', '–', '–', '–', ...keys.map(() => '–')],
     under: t.rounds > 0 && t.toPar < 0,
@@ -145,6 +163,81 @@ export function tripBoard(rounds: RoundResult[], me?: string | null): BoardTable
     valueColumn: 3,
     rows: [...playing.map((t, i) => row(t, pos[i])), ...waiting.map((t) => row(t, '–'))],
   };
+}
+
+function columnKey(game: GameResult): string {
+  return `${game.key}:${game.unit ?? 'points'}`;
+}
+
+/** A match game on a board: a line per bet, with who is ahead or how it ended. */
+export interface MatchCard {
+  key: string;
+  rows: { label: string; value: string }[];
+}
+
+/**
+ * Each match game's bets for a board: "Front · Fritz 2 & 1", "Front press · AS",
+ * "Back · Halved", "Overall · Brother 1 up". A bet not reached yet shows "–".
+ */
+export function matchCards(round: RoundResult): MatchCard[] {
+  const name = (id: string | null) => round.players.find((p) => p.id === id)?.name ?? '';
+  return round.games
+    .filter((g) => g.bets?.length)
+    .map((g) => ({
+      key: g.key,
+      rows: g.bets!.map((bet) => ({
+        label: bet.label,
+        value: !bet.started ? '–' : bet.leader ? `${name(bet.leader)} ${bet.margin}` : bet.margin,
+      })),
+    }));
+}
+
+/**
+ * The open bets in one line for the scorecard, from the viewer's side: "Front 1 up · Front press
+ * AS · Overall 2 down". Someone not playing sees names: "Front Fritz 1 up". Null: nothing open.
+ */
+export function matchStatus(round: RoundResult, me?: string | null): string | null {
+  const playing = round.players.some((p) => p.id === me);
+  const name = (id: string) => round.players.find((p) => p.id === id)?.name ?? '';
+  const lines = round.games
+    .flatMap((g) => g.bets ?? [])
+    .filter((bet) => bet.started && bet.state === 'open')
+    .map((bet) => {
+      if (!bet.leader) return `${bet.label} AS`;
+      const holes = Math.abs(bet.up);
+      if (!playing) return `${bet.label} ${name(bet.leader)} ${holes} up`;
+      return `${bet.label} ${holes} ${bet.leader === me ? 'up' : 'down'}`;
+    });
+  return lines.length ? lines.join(' · ') : null;
+}
+
+/** A bet the viewer may press now. */
+export interface Pressable {
+  /** The game's format key and the bet's id: what a press is saved under. */
+  game: string;
+  bet: string;
+  /** "Front", "Front press". */
+  label: string;
+  /** The hole just finished; the press starts on the next. */
+  afterHole: number;
+  /** The first hole of the press. */
+  from: number;
+}
+
+/** The bets `me` may press right now: the ones they are losing, once the round's rule allows. */
+export function pressable(round: RoundResult, me?: string | null): Pressable[] {
+  if (!me || round.state === 'final') return [];
+  // Holes count in order up to the first gap: the press comes after the last of those.
+  const gap = round.holes.findIndex((h) => !h.complete);
+  const done = gap < 0 ? round.holes.length : gap;
+  const after = round.holes[done - 1]?.hole;
+  const from = round.holes[done]?.hole;
+  if (after == null || from == null) return [];
+  return round.games.flatMap((g) =>
+    (g.bets ?? [])
+      .filter((bet) => bet.pressBy === me)
+      .map((bet) => ({ game: g.key, bet: bet.id, label: bet.label, afterHole: after, from })),
+  );
 }
 
 /** What a settle-up card shows: each player up or down, then who pays whom. */

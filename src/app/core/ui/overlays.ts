@@ -127,7 +127,7 @@ export class UiAttention {
       <h2>{{ title() }}</h2>
       <p class="line">{{ line() }}</p>
       <ng-content />
-      <button ui-button type="button" tone="danger" [busy]="busy()" (click)="confirmed.emit()">
+      <button ui-button type="button" [tone]="tone()" [busy]="busy()" (click)="confirmed.emit()">
         {{ action() }}
       </button>
       <button ui-button type="button" variant="outline" (click)="open.set(false)">Cancel</button>
@@ -150,6 +150,8 @@ export class UiConfirmSheet {
   readonly line = input.required<string>();
   /** The red button: "Delete trip", "Remove Charlie". */
   readonly action = input.required<string>();
+  /** Red for what can't be undone (the default); 'normal' for a step that can be taken back. */
+  readonly tone = input<'normal' | 'danger'>('danger');
   readonly busy = input(false, { transform: booleanAttribute });
   readonly confirmed = output<void>();
 }

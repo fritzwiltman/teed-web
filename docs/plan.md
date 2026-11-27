@@ -305,6 +305,7 @@ Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip
 | --- | --- | --- |
 | Individual net stroke play | Any | Net per hole from course handicap and stroke index |
 | Individual net Stableford | Any | Points per hole from net score |
+| Nassau (individual) | 2 | Net match play; front, back, overall; presses when closed out or at dormie, auto or by hand (built: see "Nassau and fixes") |
 | 2v2 Nassau | 4 | 2-man best ball; front, back, overall; tied hole: push (default), carry over, or 2nd ball; presses |
 | Sixes | 4 | Partners rotate every 6 holes; three matches; presses |
 | 2-man scramble | 4 | One team score per hole; team handicap % |
@@ -336,8 +337,8 @@ Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip
   nets sum to zero. Settle-up reduces nets to the fewest payments (whoever owes most pays whoever is owed most);
   the trip settle-up adds every round's nets and reduces once.
 - **Lifecycle:** Complete = every player has every hole in play. An organizer finalizes a Complete round; a
-  Complete round also becomes Final once its day is over in `trips.timezone`, the next time anyone opens the
-  trip (no cron). A round with holes missing never finalizes on its own.
+  Complete round also becomes Final on its own (see "Nassau and fixes" below for when), the next time anyone
+  opens the trip (no cron). A round with holes missing never finalizes on its own.
 - **Score queue:** scores go into a list on the phone and are upserted on (round, player, hole), the table's
   key, so a retry never duplicates. Retries back off to 30 seconds and run at once when the phone comes back
   online. Last write wins; conflict rules and service-worker sync are M5.
@@ -353,8 +354,40 @@ Target: M1–M6 by Jan 1, 2027; test round Jan 2–3; invites out by Jan 6; trip
   can't be inserted while anyone in the group has none ("Add Dad's handicap index"), and the scorecard says so.
 - **New versions:** the app shows "New version · Reload" when the service worker has a new build ready, and
   checks for one each time it comes back to the foreground.
-- **Left for the full milestones:** more than one group, team formats, pairing tools, presses, tee-time alerts,
+- **Left for the full milestones:** more than one group, team formats, pairing tools, tee-time alerts,
   a Net / Gross switch, score-change flags on Finalize.
+
+**Nassau and fixes, as built** (migration `0012`)
+
+- **Final on its own:** a Complete round becomes Final from 3 AM where the trip is played, on the day after
+  the latest of its date, its last score change and its last reopening. A round set up with a date already
+  past is therefore not finalized the moment its last score lands. Nothing on `scores` finalizes anything.
+- **A new round's day:** today once the trip has begun, else the first trip day with no round. Round setup
+  says "Sat, Nov 21 has passed" under a day that has.
+- **Correcting scores:** a Complete round's card stays open to its group. An organizer or co-organizer can
+  **Reopen** a Final round from the Board (confirm sheet); it is live again, the settle-up reads "If it ended
+  now", and it finalizes again by the rule above or by hand. `round_events` records who reopened it.
+- **Launch:** opening the app, or coming back to it after more than two minutes in the background, goes to the
+  Scorecard at the next unscored hole when you are in a round dated today that isn't final (from 30 minutes
+  before its tee time, or once a score is in), or to the Board once your card is complete. A link straight to
+  another page is left alone, and nobody is moved while using the app.
+- **Saves are silent.** The scorecard only says "2 scores waiting for signal" once a score has waited more
+  than five seconds, in a spot over the top of the page that moves nothing.
+- **Nassau** (two players, individual, net match play): `round_formats` row `nassau` with
+  `stake_front_cents`, `stake_back_cents`, `stake_overall_cents`, `auto_press`, `press_at`
+  (`closed` | `dormie`). Lower net wins the hole (no net double bogey cap; a pickup loses to a finisher, two
+  pickups halve). Front, back and overall are separate bets; a bet is decided when one side is up more holes
+  than are left ("3 & 2") and its margin stops there. A nine-hole round is that nine's bet alone.
+- **Presses:** `press_at` says when a bet may be pressed at all: once it is lost (closed out), or at dormie
+  (down as many holes as are left, or more). The press belongs to the player losing the bet, is for the same
+  stake, starts on the next hole and runs to the end of that side, and each bet is pressed at most once; a
+  press is a bet like any other and can be pressed in turn. No press when no hole is left on that side. With
+  `auto_press` on it starts by itself at that moment; off, the losing player gets a Press button on the
+  scorecard from that moment, and the press is a row in `presses` (bet pressed, hole just finished). The engine
+  ignores a press that wasn't allowed. `auto_press` and `press_at` can't change once the round has a score.
+  Pressing by hand needs signal (an offline press queue is a follow-up).
+- **Nassau money:** each bet and each press pays its stake to its winner; halved pays nothing. "If it ended
+  now" pays whoever is ahead in each open bet. Nets sum to zero and join the trip settle-up.
 - **Presses** (match formats only): off, manual, auto when closed out, auto when dormie, auto both; per bet in Nassau.
 - **Ryder Cup** (trip level): two teams; matches worth 1 (½ halve); live match status.
 - **Skins** add-on per round: gross or net, carryovers optional. **Pots:** buy-in × players split by % across games;

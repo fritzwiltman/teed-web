@@ -241,14 +241,29 @@ select public.finalize_due_rounds(tests.id('trip'));
 select tests.as_postgres();
 select is((select status from public.rounds where id = (select r1 from made)), 'scheduled', 'a complete round waits for midnight');
 
-update public.rounds set play_date = (now() at time zone 'America/New_York')::date - 1 where id = (select r1 from made);
+-- Its date is already past (a round set up late), and its last score has just landed: it must
+-- not become final on the spot. It waits for 3 AM there the morning after the last score.
+update public.rounds set play_date = (now() at time zone 'America/New_York')::date - 6 where id = (select r1 from made);
 select tests.as_user('zed');
 select throws_ok($$ select public.finalize_due_rounds(tests.id('trip')) $$, '42501', null, 'someone not on the trip cannot ask');
 select tests.as_user('dad');
 select public.finalize_due_rounds(tests.id('trip'));
 select tests.as_postgres();
+select is((select status from public.rounds where id = (select r1 from made)), 'scheduled',
+          'completing a round whose date is in the past does not finalize it');
+
+create function tests.tomorrow_at(t time) returns timestamptz language sql stable as $$
+  select (((now() at time zone 'America/New_York')::date + 1) + t) at time zone 'America/New_York';
+$$;
+select private.finalize_due_rounds(tests.id('trip'), tests.tomorrow_at('02:59'));
+select is((select status from public.rounds where id = (select r1 from made)), 'scheduled',
+          'nor is it final at 2:59 the next morning');
+select private.finalize_due_rounds(tests.id('trip'), tests.tomorrow_at('03:00'));
 select is((select status from public.rounds where id = (select r1 from made)), 'final',
-          'after midnight there, a complete round is final the next time anyone opens the trip');
+          'from 3 AM there the morning after its last score, a complete round is final');
+select is((select count(*) from pg_trigger g join pg_proc f on f.oid = g.tgfoid
+            where g.tgrelid = 'public.scores'::regclass and not g.tgisinternal and f.prosrc ilike '%final%'),
+          0::bigint, 'no trigger on scores finalizes anything');
 
 select tests.as_user('dad');
 update public.scores set strokes = 3 where round_id = (select r1 from made) and player_id = tests.id('dad') and hole = 18;
@@ -260,6 +275,49 @@ update public.scores set strokes = 5 where round_id = (select r1 from made) and 
 select tests.as_postgres();
 select is((select strokes::int from public.scores where round_id = (select r1 from made) and player_id = tests.id('dad') and hole = 18),
           5, 'the organizer can still fix one');
+
+-- ── Reopening a final round ─────────────────────────────────────────────────
+
+select tests.as_user('dad');
+select throws_ok($$ select public.reopen_round((select r1 from made)) $$, '42501', null, 'a player cannot reopen a round');
+select tests.as_user('zed');
+select throws_ok($$ select public.reopen_round((select r1 from made)) $$, '42501', null, 'nor can another trip''s organizer');
+select tests.as_user('fritz');
+select lives_ok($$ select public.reopen_round((select r1 from made)) $$, 'the organizer reopens a final round');
+select tests.as_postgres();
+select is((select status from public.rounds where id = (select r1 from made)), 'live', 'it is live again');
+select results_eq(
+  $$ select kind, created_by, member_id from public.round_events where round_id = (select r1 from made) $$,
+  $$ values ('reopened', tests.id('user:fritz'), tests.id('fritz')) $$, 'and who reopened it is on record');
+select tests.as_user('dad');
+select is((select count(*) from public.round_events where round_id = (select r1 from made)), 1::bigint,
+          'the people on the trip can read that');
+select throws_ok($$ insert into public.round_events (round_id, kind) values ((select r1 from made), 'reopened') $$,
+                 '42501', null, 'but nobody writes it by hand');
+update public.scores set strokes = 7 where round_id = (select r1 from made) and player_id = tests.id('dad') and hole = 18;
+select tests.as_user('zed');
+select is((select count(*) from public.round_events), 0::bigint, 'someone off the trip reads none of it');
+select tests.as_postgres();
+select is((select strokes::int from public.scores where round_id = (select r1 from made) and player_id = tests.id('dad') and hole = 18),
+          7, 'a player in the group can change a score in a reopened round');
+select tests.as_user('fritz');
+select throws_ok($$ select public.reopen_round((select r1 from made)) $$, '23514', 'That round is not final',
+                 'a round that is not final cannot be reopened');
+select public.finalize_due_rounds(tests.id('trip'));
+select tests.as_postgres();
+select is((select status from public.rounds where id = (select r1 from made)), 'live',
+          'a reopened round is not made final again the same day');
+select private.finalize_due_rounds(tests.id('trip'), tests.tomorrow_at('03:00'));
+select is((select status from public.rounds where id = (select r1 from made)), 'final',
+          'it is final again the next morning');
+
+-- Reopening a round of a final trip reopens the trip: scoring is only open on a live trip.
+update public.trips set status = 'final' where id = tests.id('trip');
+select tests.as_user('fritz');
+select public.reopen_round((select r1 from made));
+select tests.as_postgres();
+select is((select status from public.trips where id = tests.id('trip')), 'live', 'reopening a round of a final trip reopens the trip');
+select isnt((select reopened_at from public.trips where id = tests.id('trip')), null, 'which holds off the trip''s automatic final');
 
 -- A front nine is complete with nine holes.
 create temp table made2 as select tests.save('fritz', '{fritz,dad,brother}', holes => 'front') as r2;
@@ -315,6 +373,111 @@ select is(public.spectator_view('hash') -> 'rounds' -> 1 -> 'formats' -> 1 -> 's
 update public.trips set spectators_see_money = true where id = tests.id('trip');
 select is(public.spectator_view('hash') -> 'rounds' -> 1 -> 'formats' -> 1 -> 'settings', '{"point_value_cents": 50}'::jsonb,
           'unless the trip shows spectators winnings');
+
+-- ── Nassau ──────────────────────────────────────────────────────────────────
+
+create function tests.nassau(who text, players text[], settings jsonb, round uuid default null)
+returns uuid language plpgsql as $$
+declare v uuid;
+begin
+  perform tests.as_user(who);
+  v := public.save_round(tests.id('trip'), round, tests.id('palmer'), tests.id('white'), '18', current_date, '08:10',
+         (select array_agg(tests.id(p)) from unnest(players) as p), p_nassau => settings);
+  perform tests.as_postgres();
+  return v;
+end;
+$$;
+
+select throws_ok($$ select tests.nassau('fritz', '{fritz,dad,brother}', '{"stake_front_cents": 500}') $$, '23514',
+                 'Nassau is for exactly two players', 'Nassau needs exactly two players');
+select tests.as_postgres();
+select throws_ok($$ select tests.nassau('fritz', '{fritz,brother}', '{"stake_front_cents": -5}') $$, '23514', null, 'a stake cannot be negative');
+select tests.as_postgres();
+select throws_ok($$ select tests.nassau('fritz', '{fritz,brother}', '{"stake_front_cents": 2.5}') $$, '23514', null, 'a stake is whole cents');
+select tests.as_postgres();
+select throws_ok($$ select tests.nassau('fritz', '{fritz,brother}', '{"press_at": "two_down"}') $$, '23514', null,
+                 'a press is allowed when closed out or at dormie, nothing else');
+select tests.as_postgres();
+select throws_ok($$ select tests.nassau('dad', '{fritz,brother}', '{}') $$, '42501', null, 'a player cannot set one up');
+select tests.as_postgres();
+
+create temp table match as
+select tests.nassau('fritz', '{fritz,brother}',
+         '{"stake_front_cents": 500, "stake_back_cents": 500, "stake_overall_cents": 500}') as r;
+grant select on match to public;
+select results_eq(
+  $$ select f.format_key, f.settings from public.round_formats f where f.round_id = (select r from match) order by f.sort_order $$,
+  $$ values ('stroke', '{}'::jsonb),
+            ('nassau', '{"stake_front_cents": 500, "stake_back_cents": 500, "stake_overall_cents": 500, "auto_press": false, "press_at": "closed"}'::jsonb) $$,
+  'a Nassau carries its three stakes in cents; auto press is off and a press comes when closed out unless chosen');
+
+select is(tests.nassau('fritz', '{fritz,brother}',
+            '{"stake_front_cents": 500, "stake_back_cents": 1000, "stake_overall_cents": 2000, "auto_press": true, "press_at": "dormie"}',
+            (select r from match)),
+          (select r from match), 'before the first score, auto press and when it comes can change');
+select is((select f.settings from public.round_formats f where f.round_id = (select r from match) and f.format_key = 'nassau'),
+          '{"stake_front_cents": 500, "stake_back_cents": 1000, "stake_overall_cents": 2000, "auto_press": true, "press_at": "dormie"}'::jsonb,
+          'and so can the stakes');
+
+select tests.as_user('brother');
+insert into public.scores (round_id, player_id, hole, strokes) values ((select r from match), tests.id('fritz'), 1, 5);
+select tests.as_postgres();
+select throws_ok($$ select tests.nassau('fritz', '{fritz,brother}',
+                      '{"stake_front_cents": 500, "stake_back_cents": 1000, "stake_overall_cents": 2000, "auto_press": false, "press_at": "dormie"}',
+                      (select r from match)) $$,
+                 '23514', 'Auto press can''t change once the round has started', 'once a score is in, auto press stays as it is');
+select tests.as_postgres();
+select throws_ok($$ select tests.nassau('fritz', '{fritz,brother}',
+                      '{"stake_front_cents": 500, "stake_back_cents": 1000, "stake_overall_cents": 2000, "auto_press": true, "press_at": "closed"}',
+                      (select r from match)) $$,
+                 '23514', null, 'and so does when a press comes');
+select tests.as_postgres();
+select lives_ok($$ select tests.nassau('fritz', '{fritz,brother}',
+                     '{"stake_front_cents": 100, "stake_back_cents": 100, "stake_overall_cents": 100, "auto_press": true, "press_at": "dormie"}',
+                     (select r from match)) $$, 'the stakes can still be corrected');
+select tests.as_postgres();
+
+-- Pressing by hand: a row in presses, for the two in the match.
+select tests.as_user('dad');
+select throws_ok(
+  $$ insert into public.presses (round_id, round_format_id, group_id, bet, after_hole)
+     select f.round_id, f.id, g.id, 'front', 6 from public.round_formats f join public.groups g on g.round_id = f.round_id
+     where f.round_id = (select r from match) and f.format_key = 'nassau' $$,
+  '42501', null, 'someone not in the match cannot press');
+select tests.as_user('brother');
+select lives_ok(
+  $$ insert into public.presses (round_id, round_format_id, group_id, bet, after_hole)
+     select f.round_id, f.id, g.id, 'front', 6 from public.round_formats f join public.groups g on g.round_id = f.round_id
+     where f.round_id = (select r from match) and f.format_key = 'nassau' $$,
+  'a player in the match presses');
+select throws_ok(
+  $$ insert into public.presses (round_id, round_format_id, group_id, bet, after_hole)
+     select f.round_id, f.id, g.id, 'front', 6 from public.round_formats f join public.groups g on g.round_id = f.round_id
+     where f.round_id = (select r from match) and f.format_key = 'nassau' $$,
+  '23505', null, 'the same press twice is one press');
+select tests.as_user('dad');
+select is((select count(*) from public.presses where round_id = (select r from match)), 1::bigint, 'everyone on the trip sees it');
+select tests.as_postgres();
+
+select is(public.spectator_view('hash') #> '{rounds,2,formats,1,settings}',
+          '{"stake_front_cents": 100, "stake_back_cents": 100, "stake_overall_cents": 100, "auto_press": true, "press_at": "dormie"}'::jsonb,
+          'spectators shown winnings get the Nassau with its stakes');
+select is(public.spectator_view('hash') #>> '{rounds,2,presses,0,bet}', 'front', 'and its presses');
+update public.trips set spectators_see_money = false where id = tests.id('trip');
+select is(public.spectator_view('hash') #> '{rounds,2,formats,1,settings}', '{"auto_press": true, "press_at": "dormie"}'::jsonb,
+          'spectators get the Nassau without its stakes');
+
+-- A save from a phone on the last build (no p_nassau) is a round with no Nassau.
+select is(tests.save('fritz', '{fritz,brother}', nine => false, round => (select r from match)), (select r from match),
+          'a save from the last build still works');
+select is((select count(*) from public.round_formats f where f.round_id = (select r from match) and f.format_key = 'nassau'),
+          0::bigint, 'taking the Nassau off a round removes it');
+select is((select count(*) from public.presses where round_id = (select r from match)), 0::bigint, 'and its presses');
+
+select is(
+  (select count(*) from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'presses'),
+  1::bigint, 'presses are published to Realtime');
 
 select * from finish();
 rollback;

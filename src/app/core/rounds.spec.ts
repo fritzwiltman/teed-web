@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { RoundRow, RoundsService, TripRules, roundInput, safeResult } from './rounds';
-import { roundRow } from './rounds.testing';
+import { nassauRow, roundRow } from './rounds.testing';
 import { ScoreQueue } from './score-queue';
 import { SUPABASE } from './supabase';
 
@@ -150,5 +150,97 @@ describe('RoundsService', () => {
     expect(await service.finalize('r1')).toBe(true);
     expect(update).toHaveBeenCalledWith({ status: 'final' });
     expect(service.for('t1')[0].result.state).toBe('final');
+  });
+});
+
+describe('presses and reopening', () => {
+  function make(row: RoundRow, insertError: { code: string } | null | 'offline' = null) {
+    const insert = vi.fn(async (_row: unknown) => {
+      if (insertError === 'offline') throw new TypeError('Failed to fetch');
+      return { error: insertError };
+    });
+    const rpc = vi.fn(async (name: string, _args?: unknown) => ({
+      data: null,
+      error: name === 'reopen_round' && row.status !== 'final' ? { code: '23514' } : null,
+    }));
+    const db = {
+      rpc,
+      from: (table: string) => {
+        if (table === 'presses') return { insert };
+        if (table === 'trips')
+          return {
+            select: () => ({
+              eq: () => ({ maybeSingle: async () => ({ data: RULES, error: null }) }),
+            }),
+          };
+        return {
+          select: () => ({ eq: () => ({ order: async () => ({ data: [row], error: null }) }) }),
+        };
+      },
+    };
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: SUPABASE, useValue: db },
+        { provide: ScoreQueue, useValue: { pending: () => [], put: vi.fn(), onSaved: null } },
+      ],
+    });
+    return { service: TestBed.inject(RoundsService), insert, rpc };
+  }
+  const labels = (service: RoundsService) =>
+    service.for('t1')[0].result.games[0].bets!.map((b) => b.label);
+
+  beforeEach(() => localStorage.clear());
+
+  it('hands the engine a match game’s presses', () => {
+    const row = nassauRow(18);
+    row.round_formats[1].presses = [{ bet: 'front', after_hole: 6 }];
+    expect(roundInput(row, RULES, []).formats[1].presses).toEqual([{ bet: 'front', afterHole: 6 }]);
+  });
+
+  it('a press is saved for the group and shows at once', async () => {
+    const { service, insert } = make(nassauRow(6));
+    await service.load('t1');
+    expect(labels(service)).toEqual(['Front', 'Back', 'Overall']);
+    expect(await service.press('r1', 'nassau', 'front', 6)).toBe(true);
+    expect(insert).toHaveBeenCalledWith({
+      round_id: 'r1',
+      round_format_id: 'f-nassau',
+      group_id: 'g',
+      bet: 'front',
+      after_hole: 6,
+    });
+    expect(labels(service)).toEqual(['Front', 'Front press', 'Back', 'Overall']);
+  });
+
+  it('a press the server already has is still one press', async () => {
+    const { service } = make(nassauRow(6), { code: '23505' });
+    await service.load('t1');
+    expect(await service.press('r1', 'nassau', 'front', 6)).toBe(true);
+    expect(labels(service)).toEqual(['Front', 'Front press', 'Back', 'Overall']);
+  });
+
+  it('a press needs signal: with none, or refused, nothing changes', async () => {
+    for (const failure of ['offline', { code: '42501' }] as const) {
+      const { service } = make(nassauRow(6), failure);
+      await service.load('t1');
+      expect(await service.press('r1', 'nassau', 'front', 6)).toBe(false);
+      expect(labels(service)).toEqual(['Front', 'Back', 'Overall']);
+    }
+  });
+
+  it('reopening sets a final round back to live', async () => {
+    const { service, rpc } = make(nassauRow(18, { status: 'final' }));
+    await service.load('t1');
+    expect(service.for('t1')[0].result.state).toBe('final');
+    expect(await service.reopen('r1')).toBe(true);
+    expect(rpc).toHaveBeenCalledWith('reopen_round', { p_round_id: 'r1' });
+    expect(service.for('t1')[0].result.state).toBe('complete');
+  });
+
+  it('says so when the server refuses to reopen', async () => {
+    const { service } = make(nassauRow(18));
+    await service.load('t1');
+    expect(await service.reopen('r1')).toBe(false);
   });
 });

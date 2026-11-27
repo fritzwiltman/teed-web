@@ -180,4 +180,52 @@ describe('ScoreQueue', () => {
     ]);
     expect(queue.count()).toBe(0);
   });
+
+  describe('slow', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('says nothing for a score that is saved promptly', async () => {
+      const queue = make();
+      queue.put('r1', 'dad', 7, 5);
+      expect(queue.slow()).toBe(false);
+      await settle();
+      expect(queue.slow()).toBe(false);
+    });
+
+    it('is true once a score has waited more than five seconds, and false again when it is saved', async () => {
+      vi.useFakeTimers();
+      answers = ['offline'];
+      const queue = make();
+      queue.put('r1', 'dad', 7, 5);
+      await vi.advanceTimersByTimeAsync(4_900);
+      expect(queue.slow()).toBe(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(queue.slow()).toBe(true);
+      // Another score entered meanwhile doesn't reset the wait: the oldest one still counts.
+      queue.put('r1', 'dad', 8, 4);
+      expect(queue.slow()).toBe(true);
+      answers = [OK];
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(queue.count()).toBe(0);
+      expect(queue.slow()).toBe(false);
+    });
+
+    it('is true straight away for a score left over from before the app was closed', () => {
+      localStorage.setItem(
+        'teed.scores.pending',
+        JSON.stringify([
+          {
+            round_id: 'r1',
+            player_id: 'dad',
+            hole: 7,
+            strokes: 5,
+            picked_up: false,
+            at: Date.now() - 60_000,
+          },
+        ]),
+      );
+      answers = ['offline'];
+      expect(make().slow()).toBe(true);
+    });
+  });
 });
